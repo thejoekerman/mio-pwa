@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Settings</title>
+  <rect width="64" height="64" rx="18" fill="#09111f"/>
+  <path d="M32 18v7m0 14v7m14-14h-7m-14 0h-7m24-10-5 5M27 37l-5 5m20 0-5-5M27 27l-5-5" stroke="#ecbd6a" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="7" fill="none" stroke="#edf2ff" stroke-width="4"/>
+</svg>

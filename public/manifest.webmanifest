@@ -1,0 +1,19 @@
+{
+  "name": "MioLog",
+  "short_name": "MioLog",
+  "description": "A local-first game journal for your backlog, reviews, and play logs.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
