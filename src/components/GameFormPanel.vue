@@ -27,8 +27,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  cancel: []
   delete: []
-  reset: []
   save: []
 }>()
 
@@ -454,6 +454,18 @@ function addDaysDate(days: number) {
 
 <template>
   <section class="panel form-panel">
+    <button
+      type="button"
+      class="icon-button form-back-button"
+      :aria-label="t('form.cancel')"
+      :title="t('form.cancel')"
+      @click="emit('cancel')"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="m15 18-6-6 6-6" />
+      </svg>
+    </button>
+
     <div class="section-heading">
       <div>
         <p class="section-kicker">{{ form.id ? t('form.edit') : t('form.newEntry') }}</p>
@@ -467,9 +479,6 @@ function addDaysDate(days: number) {
         </p>
         <p v-else class="section-helper">{{ t('form.addEntryHelper') }}</p>
       </div>
-      <VBtn v-if="form.id" type="button" variant="outlined" color="primary" @click="emit('reset')">
-        {{ t('form.newEntry') }}
-      </VBtn>
     </div>
 
     <form class="game-form" novalidate @submit.prevent="emit('save')">

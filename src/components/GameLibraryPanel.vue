@@ -16,6 +16,14 @@ import {
 } from '../types'
 const { ownershipLabel, sortLabel, statusLabel, t } = useI18n()
 const { settings, setLibraryViewMode } = useSettings()
+const STATUS_FILTER_ORDER: GameStatus[] = [
+  'backlog',
+  'finished',
+  'playing',
+  'ongoing',
+  'paused',
+  'abandoned',
+]
 
 const props = defineProps<{
   changeGameStatus: (game: Game, status: GameStatus) => void | Promise<void>
@@ -32,7 +40,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  editGame: [game: Game]
   resetFilters: []
   selectGame: [gameId: string]
   update: [
@@ -48,7 +55,7 @@ const emit = defineEmits<{
 
 const statusFilterOptions = computed(() => [
   { title: statusLabel('all'), value: 'all' },
-  ...GAME_STATUSES.map((status) => ({
+  ...STATUS_FILTER_ORDER.map((status) => ({
     title: statusLabel(status),
     value: status,
   })),
@@ -79,6 +86,40 @@ const viewMode = computed({
   get: () => settings.libraryViewMode,
   set: (value: LibraryViewMode) => setLibraryViewMode(value),
 })
+const nextViewMode = computed<LibraryViewMode>(() => (viewMode.value === 'list' ? 'shelf' : 'list'))
+const nextViewModeLabel = computed(() =>
+  nextViewMode.value === 'list' ? t('library.switchToListView') : t('library.switchToShelfView'),
+)
+const activeFilterChips = computed(() => {
+  const chips: Array<{ key: string; title: string; clear: () => void }> = []
+
+  if (props.ownershipFilter !== 'all') {
+    chips.push({
+      key: 'ownership',
+      title: ownershipLabel(props.ownershipFilter),
+      clear: () => emit('update', { ownershipFilter: 'all' }),
+    })
+  }
+
+  if (props.statusFilter === 'finished' && props.finishedYearFilter !== 'all') {
+    chips.push({
+      key: 'finishedYear',
+      title: t('library.finishedInYear', { year: props.finishedYearFilter }),
+      clear: () => emit('update', { finishedYearFilter: 'all' }),
+    })
+  }
+
+  return chips
+})
+const extraFilterCount = computed(() => {
+  let count = props.ownershipFilter === 'all' ? 0 : 1
+
+  if (props.statusFilter === 'finished' && props.finishedYearFilter !== 'all') {
+    count += 1
+  }
+
+  return count
+})
 
 function formatTimeToBeat(game: Game) {
   const hours = getTimeToBeatHours(game)
@@ -107,95 +148,160 @@ async function handleStatusChange(
       </div>
     </div>
 
-    <div class="toolbar">
-      <div class="segmented-control" :aria-label="t('library.viewMode')">
-        <button
-          type="button"
-          class="segmented-control-button"
-          :class="{ active: viewMode === 'list' }"
-          :aria-pressed="viewMode === 'list'"
-          @click="viewMode = 'list'"
-        >
-          {{ t('library.listView') }}
-        </button>
-        <button
-          type="button"
-          class="segmented-control-button"
-          :class="{ active: viewMode === 'shelf' }"
-          :aria-pressed="viewMode === 'shelf'"
-          @click="viewMode = 'shelf'"
-        >
-          {{ t('library.shelfView') }}
-        </button>
+    <div class="library-toolbar">
+      <div class="library-toolbar-main">
+        <VTextField
+          class="form-control library-search-control"
+          :model-value="searchQuery"
+          type="search"
+          hide-details
+          :placeholder="t('library.searchPlaceholder')"
+          @update:model-value="
+            emit('update', {
+              searchQuery: $event,
+            })
+          "
+        />
+
+        <div class="library-toolbar-actions">
+          <button
+            type="button"
+            class="library-round-action"
+            :aria-label="nextViewModeLabel"
+            :title="nextViewModeLabel"
+            @click="viewMode = nextViewMode"
+          >
+            <svg v-if="viewMode === 'list'" aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="4" y="4" width="6" height="6" rx="1.2" />
+              <rect x="14" y="4" width="6" height="6" rx="1.2" />
+              <rect x="4" y="14" width="6" height="6" rx="1.2" />
+              <rect x="14" y="14" width="6" height="6" rx="1.2" />
+            </svg>
+            <svg v-else aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M8 6h12" />
+              <path d="M8 12h12" />
+              <path d="M8 18h12" />
+              <path d="M4 6h.01" />
+              <path d="M4 12h.01" />
+              <path d="M4 18h.01" />
+            </svg>
+          </button>
+
+          <VMenu location="bottom end">
+            <template #activator="{ props: activatorProps }">
+              <VBtn
+                v-bind="activatorProps"
+                class="library-round-action"
+                type="button"
+                icon
+                variant="outlined"
+                color="primary"
+                :aria-label="t('library.sort')"
+                :title="sortLabel(sortOption, statusFilter === 'finished' ? 'finished' : undefined)"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M4 7h11" />
+                  <path d="M4 12h8" />
+                  <path d="M4 17h5" />
+                  <path d="M17 5v14" />
+                  <path d="m14 16 3 3 3-3" />
+                </svg>
+              </VBtn>
+            </template>
+
+            <VList class="status-menu-list" density="compact">
+              <VListItem
+                v-for="option in sortOptions"
+                :key="option.value"
+                :active="sortOption === option.value"
+                :title="option.title"
+                @click="emit('update', { sortOption: option.value as GameSortOption })"
+              />
+            </VList>
+          </VMenu>
+
+          <VMenu location="bottom end" :close-on-content-click="true">
+            <template #activator="{ props: activatorProps }">
+              <VBtn
+                v-bind="activatorProps"
+                class="library-round-action"
+                type="button"
+                icon
+                :variant="extraFilterCount > 0 ? 'flat' : 'outlined'"
+                color="primary"
+                :aria-label="t('library.filters')"
+                :title="t('library.filters')"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M4 6h16" />
+                  <path d="M7 12h10" />
+                  <path d="M10 18h4" />
+                </svg>
+                <span v-if="extraFilterCount > 0" class="library-action-badge">{{ extraFilterCount }}</span>
+              </VBtn>
+            </template>
+
+            <VList class="status-menu-list library-filter-menu" density="compact">
+              <VListSubheader>{{ t('library.ownershipFilter') }}</VListSubheader>
+              <VListItem
+                v-for="option in ownershipFilterOptions"
+                :key="option.value"
+                :active="ownershipFilter === option.value"
+                :title="option.title"
+                @click="emit('update', { ownershipFilter: option.value as GameOwnershipFilter })"
+              />
+              <template v-if="statusFilter === 'finished'">
+                <VDivider />
+                <VListSubheader>{{ t('library.finishYearFilter') }}</VListSubheader>
+                <VListItem
+                  v-for="option in finishedYearFilterOptions"
+                  :key="option.value"
+                  :active="finishedYearFilter === option.value"
+                  :title="option.title"
+                  @click="emit('update', { finishedYearFilter: option.value as 'all' | string })"
+                />
+              </template>
+            </VList>
+          </VMenu>
+
+          <VBtn
+            v-if="hasActiveFilters"
+            type="button"
+            variant="text"
+            color="primary"
+            @click="emit('resetFilters')"
+          >
+            {{ t('library.resetFilters') }}
+          </VBtn>
+        </div>
       </div>
 
-      <VTextField
-        class="form-control"
-        :model-value="searchQuery"
-        type="search"
-        hide-details
-        :placeholder="t('library.searchPlaceholder')"
-        @update:model-value="
-          emit('update', {
-            searchQuery: $event,
-          })
-        "
-      />
-      <VSelect
-        class="form-control"
-        hide-details
-        :items="statusFilterOptions"
-        :model-value="statusFilter"
-        @update:model-value="
-          emit('update', {
-            statusFilter: $event as 'all' | GameStatus,
-          })
-        "
-      />
-      <VSelect
-        class="form-control"
-        hide-details
-        :aria-label="t('library.ownershipFilter')"
-        :items="ownershipFilterOptions"
-        :model-value="ownershipFilter"
-        @update:model-value="
-          emit('update', {
-            ownershipFilter: $event as GameOwnershipFilter,
-          })
-        "
-      />
-      <VSelect
-        v-if="statusFilter === 'finished'"
-        class="form-control"
-        hide-details
-        :items="finishedYearFilterOptions"
-        :model-value="finishedYearFilter"
-        @update:model-value="
-          emit('update', {
-            finishedYearFilter: $event as 'all' | string,
-          })
-        "
-      />
-      <VSelect
-        class="form-control"
-        hide-details
-        :items="sortOptions"
-        :model-value="sortOption"
-        @update:model-value="
-          emit('update', {
-            sortOption: $event as GameSortOption,
-          })
-        "
-      />
-      <VBtn
-        v-if="hasActiveFilters"
-        type="button"
-        variant="outlined"
-        color="primary"
-        @click="emit('resetFilters')"
-      >
-        {{ t('library.resetFilters') }}
-      </VBtn>
+      <div class="status-filter-row" :aria-label="t('library.statusFilter')">
+        <VChip
+          v-for="option in statusFilterOptions"
+          :key="option.value"
+          class="status-filter-chip"
+          :class="{ active: statusFilter === option.value }"
+          :color="statusFilter === option.value ? 'primary' : undefined"
+          :variant="statusFilter === option.value ? 'flat' : 'outlined'"
+          @click="emit('update', { statusFilter: option.value as 'all' | GameStatus })"
+        >
+          {{ option.title }}
+        </VChip>
+      </div>
+
+      <div v-if="activeFilterChips.length > 0" class="active-filter-row">
+        <VChip
+          v-for="chip in activeFilterChips"
+          :key="chip.key"
+          closable
+          variant="tonal"
+          color="primary"
+          @click:close="chip.clear"
+        >
+          {{ chip.title }}
+        </VChip>
+      </div>
     </div>
 
     <div v-if="filteredGames.length > 0 && viewMode === 'list'" class="game-list">
@@ -209,22 +315,10 @@ async function handleStatusChange(
         }"
         @click="emit('selectGame', game.id)"
       >
-        <div class="game-card-shell">
-          <div class="game-card-cover-rail">
-            <GameCover :title="game.title" :cover-url="game.coverUrl" size="small" />
-            <button
-              type="button"
-              class="icon-button card-edit-icon"
-              :aria-label="t('library.editDetails')"
-              :title="t('library.editDetails')"
-              @click.stop="emit('editGame', game)"
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-            </button>
-          </div>
+          <div class="game-card-shell">
+            <div class="game-card-cover-rail">
+              <GameCover :title="game.title" :cover-url="game.coverUrl" size="small" />
+            </div>
 
           <div class="game-card-copy">
             <div class="game-card-top">
