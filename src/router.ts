@@ -1,4 +1,5 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
+import { isDesktopMode } from './lib/appMode'
 
 const EditGameView = () => import('./views/EditGameView.vue')
 const GameView = () => import('./views/GameView.vue')
@@ -9,7 +10,7 @@ const SettingsView = () => import('./views/SettingsView.vue')
 const TrophiesView = () => import('./views/TrophiesView.vue')
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: isDesktopMode ? createWebHashHistory() : createWebHistory(),
   scrollBehavior(_to, _from, savedPosition) {
     if (savedPosition) {
       return savedPosition

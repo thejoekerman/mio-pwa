@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import GameCover from './GameCover.vue'
 import { useI18n } from '../i18n'
 import {
@@ -11,6 +12,7 @@ import { getTimeToBeatHours } from '../lib/timeToBeat'
 import type { Game, LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
+const router = useRouter()
 
 const props = defineProps<{
   canUseReviewDraft: boolean
@@ -103,6 +105,15 @@ function handleEditKeydown(event: KeyboardEvent) {
   }
 }
 
+function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+
+  void router.push({ name: 'library' })
+}
+
 function startEditingLog(log: LogEntry) {
   editingLogId.value = log.id
   editingLogContent.value = log.content
@@ -178,6 +189,18 @@ function igdbCreditLine(game: Game) {
 <template>
   <section class="panel detail-panel">
     <div v-if="selectedGame" class="detail-content">
+      <button
+        type="button"
+        class="icon-button detail-back-button"
+        :aria-label="t('detail.goBack')"
+        :title="t('detail.goBack')"
+        @click="goBack"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+      </button>
+
       <div class="section-heading">
         <div>
           <p class="section-kicker">{{ t('detail.kicker') }}</p>
@@ -191,6 +214,7 @@ function igdbCreditLine(game: Game) {
             class="icon-button large"
             :aria-label="t('library.editDetails')"
             :title="t('library.editDetails')"
+            replace
             :to="{ name: 'edit-game', params: { gameId: selectedGame.id } }"
           >
             <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -235,6 +259,10 @@ function igdbCreditLine(game: Game) {
         <div v-if="selectedGame.ownershipType" class="overview-card">
           <strong>{{ ownershipLabel(selectedGame.ownershipType) }}</strong>
           <span>{{ t('detail.ownershipType') }}</span>
+        </div>
+        <div v-if="selectedGame.rating !== null" class="overview-card">
+          <strong>{{ selectedGame.rating }}/10</strong>
+          <span>{{ t('detail.rating') }}</span>
         </div>
         <div v-if="selectedGame.playTimeHours !== null" class="overview-card">
           <strong>{{ selectedGame.playTimeHours }} h</strong>

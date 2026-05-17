@@ -40,6 +40,7 @@ function demoHeadPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: process.env.VITE_APP_TARGET === 'desktop' ? './' : '/',
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },

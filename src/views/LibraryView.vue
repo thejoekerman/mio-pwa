@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import GameLibraryPanel from '../components/GameLibraryPanel.vue'
 import { useBacklog } from '../composables/useBacklog'
-import type { Game, GameOwnershipFilter, GameSortOption, GameStatus } from '../types'
+import type { GameOwnershipFilter, GameSortOption, GameStatus } from '../types'
 const router = useRouter()
 const {
   filteredGames,
@@ -16,7 +16,6 @@ const {
   selectGame,
   selectedGameId,
   sortOption,
-  startEditingGame,
   statusFilter,
   updateGameStatus,
 } = useBacklog()
@@ -26,7 +25,7 @@ const hasActiveFilters = computed(
     searchQuery.value.trim().length > 0 ||
     ownershipFilter.value !== 'all' ||
     (statusFilter.value === 'finished' && finishedYearFilter.value !== 'all') ||
-    statusFilter.value !== 'all' ||
+    statusFilter.value !== 'backlog' ||
     sortOption.value !== 'created-desc',
 )
 
@@ -66,11 +65,6 @@ async function openGame(gameId: string) {
   await selectGame(gameId)
   await router.push({ name: 'game', params: { gameId } })
 }
-
-async function editGame(game: Game) {
-  startEditingGame(game)
-  await router.push({ name: 'edit-game', params: { gameId: game.id } })
-}
 </script>
 
 <template>
@@ -87,7 +81,6 @@ async function editGame(game: Game) {
       :selected-game-id="selectedGameId"
       :sort-option="sortOption"
       :status-filter="statusFilter"
-      @edit-game="editGame"
       @reset-filters="resetLibraryFilters"
       @select-game="openGame"
       @update="handleLibraryUpdate"

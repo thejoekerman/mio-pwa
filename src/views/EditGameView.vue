@@ -54,13 +54,26 @@ async function handleSave() {
   const savedGame = await saveCurrentGame()
 
   if (savedGame) {
-    await router.push({ name: 'game', params: { gameId: savedGame.id } })
+    await router.replace({ name: 'game', params: { gameId: savedGame.id } })
   }
 }
 
-function handleReset() {
-  startCreatingGame()
-  void router.replace({ name: 'add-game' })
+async function handleCancel() {
+  const gameId = routeGameId.value
+
+  if (gameId) {
+    const game = games.value.find((entry) => entry.id === gameId)
+
+    if (game) {
+      startEditingGame(game)
+    }
+
+    await router.replace({ name: 'game', params: { gameId } })
+    return
+  }
+
+  resetForm()
+  await router.replace({ name: 'library' })
 }
 
 function handleDelete() {
@@ -107,7 +120,7 @@ async function confirmDelete() {
 
   if (deleted) {
     resetForm()
-    await router.push({ name: 'library' })
+    await router.replace({ name: 'library' })
   }
 }
 </script>
@@ -122,8 +135,8 @@ async function confirmDelete() {
       :is-saving="isSaving"
       :is-sync-configured="isSyncConfigured"
       :updated-at="games.find((entry) => entry.id === routeGameId)?.updatedAt ?? null"
+      @cancel="handleCancel"
       @delete="handleDelete"
-      @reset="handleReset"
       @save="handleSave"
     />
 

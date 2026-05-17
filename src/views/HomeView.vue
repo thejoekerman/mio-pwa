@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import EmblaCarousel, { type EmblaCarouselType } from 'embla-carousel'
+import { useRouter } from 'vue-router'
 import GameCover from '../components/GameCover.vue'
 import HomeChoiceCard from '../components/HomeChoiceCard.vue'
 import TrophyIcon from '../components/TrophyIcon.vue'
 import { useBacklog } from '../composables/useBacklog'
 import { useI18n } from '../i18n'
 import { downloadBackupPayload } from '../lib/backupDownload'
+import { getTimeToBeatHours } from '../lib/timeToBeat'
 import type { Game, GameStatus } from '../types'
 
 const {
@@ -21,6 +23,7 @@ const {
   games,
   isGeneratingPlayNextRecommendation,
   logDraft,
+  logs,
   playNextRecommendations,
   recentLogs,
   saveCurrentLog,
@@ -31,14 +34,18 @@ const {
   trophyViews,
   updateGameStatus,
 } = useBacklog()
-const { statusLabel, t } = useI18n()
+const { ownershipLabel, statusLabel, t } = useI18n()
+const router = useRouter()
 
 const activeGameId = ref<string | null>(null)
 const activeSlideIndex = ref(0)
 const emblaViewportRef = ref<HTMLElement | null>(null)
 const emblaApi = ref<EmblaCarouselType | null>(null)
+const isDesktopHomeLayout = ref(false)
+const pointerDownPosition = ref<{ x: number; y: number } | null>(null)
 const randomBacklogGame = ref<Game | null>(null)
 const ACTIVE_HOME_STATUSES: GameStatus[] = ['playing', 'ongoing']
+let desktopHomeMediaQuery: MediaQueryList | null = null
 
 const activeHomeGames = computed(() =>
   games.value
@@ -52,8 +59,42 @@ const activeHomeGames = computed(() =>
     }),
 )
 
-const displayedRecentLogs = computed(() => recentLogs.value.slice(0, 3))
+const displayedRecentLogs = computed(() => recentLogs.value.slice(0, isDesktopHomeLayout.value ? 5 : 3))
 const recentTrophies = computed(() => earnedTrophyViews.value.slice(0, 3))
+const currentGameTimeline = computed(() => {
+  if (!featuredGame.value) {
+    return []
+  }
+
+  const entries = [
+    { label: t('home.timelineLogs'), value: t('home.timelineLogCount', { count: logs.value.length }) },
+  ]
+  const oldestLog = logs.value[logs.value.length - 1] ?? null
+  const latestLog = logs.value[0] ?? null
+
+  if (oldestLog) {
+    entries.push({ label: t('home.timelineFirstNote'), value: formatDate(oldestLog.createdAt) })
+  }
+
+  if (latestLog && latestLog.id !== oldestLog?.id) {
+    entries.push({ label: t('home.timelineLatestNote'), value: formatDate(latestLog.createdAt) })
+  }
+
+  if (featuredGame.value.playTimeHours !== null) {
+    entries.push({ label: t('detail.playTime'), value: `${featuredGame.value.playTimeHours} h` })
+  }
+
+  if (featuredGame.value.finishedAt) {
+    entries.push({ label: t('detail.finished'), value: featuredGame.value.finishedAt })
+  }
+
+  entries.push({
+    label: t('detail.review'),
+    value: featuredGame.value.review.trim() ? t('home.timelineReviewWritten') : t('home.timelineReviewOpen'),
+  })
+
+  return entries
+})
 const gamesById = computed(() => new Map(games.value.map((game) => [game.id, game])))
 const randomBacklogCandidates = computed(() =>
   games.value
@@ -88,6 +129,35 @@ const featuredGame = computed(() => {
   }
 
   return currentFocus.value
+})
+
+const featuredGameMetadata = computed(() => {
+  if (!featuredGame.value) {
+    return []
+  }
+
+  const game = featuredGame.value
+  const metadata = [game.platform || t('detail.anywhere')]
+
+  if (game.ownershipType) {
+    metadata.push(ownershipLabel(game.ownershipType))
+  }
+
+  if (game.rating !== null) {
+    metadata.push(`${game.rating}/10`)
+  }
+
+  if (game.playTimeHours !== null) {
+    metadata.push(`${game.playTimeHours} h`)
+  }
+
+  const timeToBeat = formatTimeToBeat(game)
+
+  if (timeToBeat) {
+    metadata.push(timeToBeat)
+  }
+
+  return metadata
 })
 
 function syncEmblaToActiveGame() {
@@ -190,6 +260,36 @@ async function focusPlayingGame(gameId: string) {
   await selectGame(gameId)
 }
 
+function recordPlayingCardPointer(event: PointerEvent) {
+  pointerDownPosition.value = {
+    x: event.clientX,
+    y: event.clientY,
+  }
+}
+
+async function openPlayingCard(game: Game, event: PointerEvent | MouseEvent) {
+  const start = pointerDownPosition.value
+  pointerDownPosition.value = null
+
+  if (start) {
+    const deltaX = Math.abs(event.clientX - start.x)
+    const deltaY = Math.abs(event.clientY - start.y)
+
+    if (deltaX > 8 || deltaY > 8) {
+      return
+    }
+  }
+
+  await focusPlayingGame(game.id)
+  await router.push({ name: 'game', params: { gameId: game.id } })
+}
+
+function formatTimeToBeat(game: Game) {
+  const hours = getTimeToBeatHours(game)
+
+  return hours === null ? null : `~${hours} h`
+}
+
 function goToHomeGame(index: number) {
   emblaApi.value?.scrollTo(index)
 }
@@ -235,6 +335,16 @@ function createEmbla() {
   })
 }
 
+function syncDesktopHomeLayout() {
+  isDesktopHomeLayout.value = desktopHomeMediaQuery?.matches ?? false
+}
+
+if (typeof window !== 'undefined') {
+  desktopHomeMediaQuery = window.matchMedia('(min-width: 1181px)')
+  syncDesktopHomeLayout()
+  desktopHomeMediaQuery.addEventListener('change', syncDesktopHomeLayout)
+}
+
 watch(
   () => activeHomeGames.value.length,
   async (count) => {
@@ -263,6 +373,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  desktopHomeMediaQuery?.removeEventListener('change', syncDesktopHomeLayout)
   destroyEmbla()
 })
 </script>
@@ -293,115 +404,117 @@ onBeforeUnmount(() => {
     </section>
 
     <main v-if="featuredGame || shouldShowChoicePanel" class="home-stack">
-      <section v-if="featuredGame" class="panel home-capture-panel">
-        <div class="home-capture-header">
-          <div
-            class="home-capture-title-row"
-            :class="{ 'home-capture-title-row--with-cover': activeHomeGames.length <= 1 }"
-          >
-            <GameCover
-              v-if="activeHomeGames.length <= 1"
-              :title="featuredGame.title"
-              :cover-url="featuredGame.coverUrl"
-              size="small"
-            />
-            <div>
-              <p class="section-kicker">{{ t('home.nowPlaying') }}</p>
-              <h1 v-if="activeHomeGames.length <= 1" class="view-title home-capture-title">
-                {{ featuredGame.title }}
-              </h1>
-              <div v-if="activeHomeGames.length <= 1" class="home-capture-meta">
-                <span class="focus-chip">{{ featuredGame.platform || t('home.platformFree') }}</span>
-                <span class="detail-status">{{ statusLabel(featuredGame.status) }}</span>
+      <div v-if="featuredGame" class="home-featured-row">
+        <section class="panel home-capture-panel">
+          <div class="home-capture-header">
+            <div
+              class="home-capture-title-row"
+              :class="{ 'home-capture-title-row--with-cover': activeHomeGames.length <= 1 }"
+            >
+              <button
+                v-if="activeHomeGames.length <= 1"
+                type="button"
+                class="home-capture-cover-button"
+                :aria-label="t('home.openFullGamePage')"
+                :title="t('home.openFullGamePage')"
+                @click="router.push({ name: 'game', params: { gameId: featuredGame.id } })"
+              >
+                <GameCover
+                  :title="featuredGame.title"
+                  :cover-url="featuredGame.coverUrl"
+                  size="small"
+                />
+              </button>
+              <div>
+                <p class="section-kicker">{{ t('home.nowPlaying') }}</p>
+                <h1 v-if="activeHomeGames.length <= 1" class="view-title home-capture-title">
+                  {{ featuredGame.title }}
+                </h1>
+                <div v-if="activeHomeGames.length <= 1" class="home-capture-meta">
+                  <span class="focus-chip">{{ featuredGame.platform || t('home.platformFree') }}</span>
+                  <span class="detail-status">{{ statusLabel(featuredGame.status) }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div v-if="activeHomeGames.length > 1" class="home-now-playing-strip">
-          <div class="section-heading compact">
-            <div>
-              <h2>{{ t('home.activeGames') }}</h2>
-            </div>
-          </div>
-
-          <div class="home-playing-rail embla">
-            <div ref="emblaViewportRef" class="embla__viewport" :aria-label="t('home.activeGamesAria')">
-              <div class="embla__container">
-                <div v-for="game in activeHomeGames" :key="game.id" class="embla__slide">
-                  <button
-                    type="button"
-                    class="playing-rail-card"
-                    :class="{ active: featuredGame.id === game.id }"
-                  @click="focusPlayingGame(game.id)"
-                >
-                  <GameCover :title="game.title" :cover-url="game.coverUrl" size="small" />
-                  <span class="playing-rail-card-copy">
-                    <strong>{{ game.title }}</strong>
-                    <span>{{ game.platform || t('home.platformFree') }}</span>
-                  </span>
-                </button>
+          <div v-if="activeHomeGames.length > 1" class="home-now-playing-strip">
+            <div class="section-heading compact">
+              <div>
+                <h2>{{ t('home.activeGames') }}</h2>
               </div>
             </div>
+
+            <div class="home-playing-rail embla">
+              <div ref="emblaViewportRef" class="embla__viewport" :aria-label="t('home.activeGamesAria')">
+                <div class="embla__container">
+                  <div v-for="game in activeHomeGames" :key="game.id" class="embla__slide">
+                    <button
+                      type="button"
+                      class="playing-rail-card"
+                      :class="{ active: featuredGame.id === game.id }"
+                      :aria-label="t('home.openFullGamePage')"
+                      :title="t('home.openFullGamePage')"
+                      @pointerdown="recordPlayingCardPointer"
+                      @click="openPlayingCard(game, $event)"
+                    >
+                      <GameCover :title="game.title" :cover-url="game.coverUrl" size="small" />
+                      <span class="playing-rail-card-copy">
+                        <strong>{{ game.title }}</strong>
+                        <span>{{ game.platform || t('home.platformFree') }}</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="home-rail-dots" :aria-label="t('home.paginationAria')">
+              <button
+                v-for="(game, index) in activeHomeGames"
+                :key="`dot-${game.id}`"
+                type="button"
+                class="home-rail-dot"
+                :class="{ active: activeSlideIndex === index }"
+                :aria-label="t('home.goToGame', { title: game.title })"
+                @click="goToHomeGame(index)"
+              />
             </div>
           </div>
 
-          <div class="home-rail-dots" :aria-label="t('home.paginationAria')">
-            <button
-              v-for="(game, index) in activeHomeGames"
-              :key="`dot-${game.id}`"
-              type="button"
-              class="home-rail-dot"
-              :class="{ active: activeSlideIndex === index }"
-              :aria-label="t('home.goToGame', { title: game.title })"
-              @click="goToHomeGame(index)"
+          <form class="home-quick-form" @submit.prevent="saveCurrentLog">
+            <VTextarea
+              class="form-control"
+              :model-value="logDraft"
+              rows="4"
+              :aria-label="t('home.quickPlayLog')"
+              :placeholder="t('home.quickPlayLogPlaceholder')"
+              @update:model-value="logDraft = $event"
             />
+
+            <div class="home-quick-actions home-quick-actions--submit">
+              <VBtn class="miolog-primary-action" color="primary" type="submit">
+                {{ t('home.addPlayLog') }}
+              </VBtn>
+            </div>
+          </form>
+        </section>
+
+        <aside class="panel home-current-detail-panel">
+          <div class="home-current-detail-header">
+            <GameCover :title="featuredGame.title" :cover-url="featuredGame.coverUrl" size="small" />
+            <div class="home-current-detail-copy">
+              <p class="section-kicker">{{ t('home.currentGameKicker') }}</p>
+              <h2>{{ featuredGame.title }}</h2>
+
+              <div class="card-metadata-list home-current-metadata">
+                <span v-for="item in featuredGameMetadata" :key="item">{{ item }}</span>
+                <span v-for="tag in featuredGame.tags" :key="tag">{{ tag }}</span>
+              </div>
+            </div>
           </div>
-        </div>
-
-        <div class="home-current-actions">
-          <RouterLink
-            class="icon-button large"
-            :aria-label="t('home.openFullGamePage')"
-            :title="t('home.openFullGamePage')"
-            :to="{ name: 'game', params: { gameId: featuredGame.id } }"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M15 3h6v6" />
-              <path d="M10 14 21 3" />
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            </svg>
-          </RouterLink>
-          <RouterLink
-            class="icon-button large"
-            :aria-label="t('home.editThisGame')"
-            :title="t('home.editThisGame')"
-            :to="{ name: 'edit-game', params: { gameId: featuredGame.id } }"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-            </svg>
-          </RouterLink>
-        </div>
-
-        <form class="home-quick-form" @submit.prevent="saveCurrentLog">
-          <VTextarea
-            class="form-control"
-            :model-value="logDraft"
-            rows="4"
-            :aria-label="t('home.quickPlayLog')"
-            :placeholder="t('home.quickPlayLogPlaceholder')"
-            @update:model-value="logDraft = $event"
-          />
-
-          <div class="home-quick-actions home-quick-actions--submit">
-            <VBtn class="miolog-primary-action" color="primary" type="submit">
-              {{ t('home.addPlayLog') }}
-            </VBtn>
-          </div>
-        </form>
-      </section>
+        </aside>
+      </div>
 
       <section class="home-grid">
         <section v-if="!featuredGame" class="panel home-empty-panel">
@@ -510,9 +623,25 @@ onBeforeUnmount(() => {
           </div>
         </aside>
 
+        <aside v-if="featuredGame" class="panel home-side-panel home-journey-panel">
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker">{{ t('home.journeyKicker') }}</p>
+              <h2>{{ t('home.journeyTitle') }}</h2>
+            </div>
+          </div>
+
+          <div class="home-journey-list">
+            <div v-for="item in currentGameTimeline" :key="item.label" class="home-journey-item">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+        </aside>
+
         <section
           v-if="shouldShowChoicePanel"
-          class="panel home-side-panel"
+          class="panel home-side-panel home-choice-panel"
         >
           <div class="home-ai-card">
             <div class="home-ai-card-header">
