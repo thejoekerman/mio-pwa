@@ -42,16 +42,24 @@ export const GAME_SORT_OPTIONS = [
   'created-desc',
   'created-asc',
   'title-asc',
+  'developer-asc',
+  'publisher-asc',
   'rating-desc',
   'rating-asc',
 ] as const
 
 export type GameSortOption = (typeof GAME_SORT_OPTIONS)[number]
 
+export const GAME_PRIORITIES = ['high-interest', 'low-pressure', 'save-for-later'] as const
+
+export type GamePriority = (typeof GAME_PRIORITIES)[number]
+
 export const GAME_SORT_LABELS: Record<GameSortOption, string> = {
   'created-desc': 'Added newest',
   'created-asc': 'Added oldest',
   'title-asc': 'Title A-Z',
+  'developer-asc': 'Developer A-Z',
+  'publisher-asc': 'Publisher A-Z',
   'rating-desc': 'Rating high-low',
   'rating-asc': 'Rating low-high',
 }
@@ -114,6 +122,10 @@ export interface Game {
   igdbPublishers?: string[] | null
   igdbThemes?: string[] | null
   igdbGameModes?: string[] | null
+  releaseYear?: number | null
+  priority?: GamePriority | null
+  developer?: string | null
+  publisher?: string | null
   finishedAt: string | null
   pausedAt: string | null
   nudgeAt: string | null
@@ -168,6 +180,7 @@ export interface SyncUser {
 export interface SyncCapabilities {
   reviewDraft: boolean
   playNext: boolean
+  igdbMetadata?: boolean
 }
 
 export interface SyncConnectionResponse {
@@ -215,6 +228,10 @@ export interface GameFormState {
   ownershipType: '' | GameOwnershipType
   tags: string
   igdbId: string
+  releaseYear: string
+  priority: '' | GamePriority
+  developer: string
+  publisher: string
   coverUrl: string
   review: string
   finishedAt: string

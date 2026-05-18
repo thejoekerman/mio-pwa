@@ -710,8 +710,7 @@ h3 {
 .stats article,
 .panel,
 .game-card,
-.log-entry,
-.overview-card {
+.log-entry {
   border: 1px solid var(--line);
   background: var(--panel-base-gradient);
   backdrop-filter: blur(16px);
@@ -1103,7 +1102,6 @@ h3 {
   gap: 22px;
 }
 
-.home-side-panel,
 .home-empty-panel {
   min-height: 100%;
 }
@@ -1595,6 +1593,30 @@ h3 {
 
 .tag-combobox .v-label {
   transform-origin: left top;
+}
+
+.more-details-panel {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.more-details-panel .v-expansion-panel {
+  color: var(--text);
+  background: transparent;
+}
+
+.more-details-panel .v-expansion-panel-title {
+  min-height: 48px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.more-details-fields {
+  display: grid;
+  gap: 16px;
+  padding-top: 4px;
 }
 
 .wikidata-suggestions {
@@ -2117,6 +2139,31 @@ textarea:focus {
   z-index: -1;
 }
 
+.game-cover--contained-source {
+  background:
+    linear-gradient(145deg, rgba(10, 14, 24, 0.98), rgba(28, 33, 48, 0.96));
+}
+
+.game-cover--contained-source::before {
+  content: '';
+  position: absolute;
+  inset: -16px;
+  z-index: -2;
+  background-image: var(--cover-image);
+  background-position: center;
+  background-size: cover;
+  filter: blur(16px) saturate(1.08);
+  opacity: 0.9;
+  transform: scale(1.12);
+}
+
+.game-cover--contained-source::after {
+  z-index: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 30%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.18));
+}
+
 .game-cover--small {
   width: 112px;
   aspect-ratio: 3 / 4;
@@ -2136,6 +2183,13 @@ textarea:focus {
 .game-cover img {
   display: block;
   object-fit: cover;
+  position: relative;
+  z-index: 1;
+}
+
+.game-cover--contained-source img {
+  object-fit: contain;
+  padding: 4px;
 }
 
 .game-cover-fallback {
@@ -2212,6 +2266,12 @@ textarea:focus {
   background: var(--panel-accent);
 }
 
+.icon-button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .icon-button svg {
   width: 18px;
   height: 18px;
@@ -2261,28 +2321,18 @@ textarea:focus {
 }
 
 .card-metadata-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  align-items: center;
   margin-top: 10px;
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .card-metadata-list span {
-  display: inline-flex;
-  align-items: center;
+  display: inline;
 }
 
-.card-metadata-list span:not(:last-child)::after {
-  content: '';
-  width: 3px;
-  height: 3px;
-  margin-left: 10px;
-  border-radius: 50%;
-  background: currentColor;
+.metadata-separator {
   opacity: 0.48;
 }
 
@@ -2418,8 +2468,27 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
-.detail-hero-copy .tag-list {
-  margin-top: 16px;
+.detail-hero-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.detail-hero-metadata {
+  margin-top: 0;
+  font-size: 0.88rem;
+}
+
+.detail-status-pill {
+  width: fit-content;
+  padding: 0.38rem 0.68rem;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .detail-meta-link {
@@ -2438,31 +2507,58 @@ textarea:focus {
 
 .detail-log-zone {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   padding-top: 22px;
   margin-top: 4px;
   border-top: 1px solid var(--line);
 }
 
+.detail-log-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-bottom: 0;
+}
+
 .detail-log-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: end;
   gap: 8px;
 }
 
-.detail-log-actions .v-btn {
-  min-height: 40px;
-  padding: 0.38rem 0.64rem;
-  font-size: 0.82rem;
-  letter-spacing: 0;
-  text-transform: none;
+.detail-log-actions .icon-button {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
 }
 
-.detail-overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+.detail-log-actions .icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.detail-log-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.detail-log-count {
+  display: inline-flex;
+  min-width: 1.65rem;
+  height: 1.65rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .inline-status-switcher {
@@ -2488,18 +2584,6 @@ textarea:focus {
 }
 
 .status-menu-list .v-list-item--active {
-  color: var(--accent-strong);
-}
-
-.overview-card {
-  display: grid;
-  gap: 6px;
-  padding: 18px;
-  border-radius: 18px;
-}
-
-.overview-card strong {
-  font: 800 1.35rem/1.05 var(--sans);
   color: var(--accent-strong);
 }
 
@@ -2754,8 +2838,7 @@ textarea:focus {
   .toolbar,
   .card-footer,
   .home-backup-reminder,
-  .detail-meta,
-  .detail-overview {
+  .detail-meta {
     grid-template-columns: 1fr;
   }
 

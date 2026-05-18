@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import GameCover from './GameCover.vue'
 import { useSettings } from '../composables/useSettings'
 import { useI18n } from '../i18n'
+import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
 import { getTimeToBeatHours } from '../lib/timeToBeat'
 import {
   GAME_OWNERSHIP_FILTERS,
@@ -120,11 +121,47 @@ const extraFilterCount = computed(() => {
 
   return count
 })
+const listMetadata = computed(() =>
+  new Map(
+    props.filteredGames.map((game) => [
+      game.id,
+      [
+        game.platform || t('detail.anywhere'),
+        game.ownershipType ? ownershipLabel(game.ownershipType) : null,
+        ...game.tags,
+        game.releaseYear ? String(game.releaseYear) : null,
+        creditLine(game),
+        formatTimeToBeat(game),
+        game.rating !== null ? `${game.rating}/10` : null,
+        game.finishedAt ? t('library.finishedOn', { date: game.finishedAt }) : null,
+      ].filter((item): item is string => Boolean(item)),
+    ]),
+  ),
+)
 
 function formatTimeToBeat(game: Game) {
   const hours = getTimeToBeatHours(game)
 
   return hours === null ? null : `~${hours} h TTB`
+}
+
+function creditLine(game: Game) {
+  const developer = getDisplayDeveloper(game)
+  const publisher = getDisplayPublisher(game)
+
+  if (developer && publisher) {
+    return t('detail.igdbCreditsFull', { developers: developer, publishers: publisher })
+  }
+
+  if (developer) {
+    return t('detail.igdbCreditsDevelopers', { developers: developer })
+  }
+
+  if (publisher) {
+    return t('detail.igdbCreditsPublishers', { publishers: publisher })
+  }
+
+  return null
 }
 
 async function handleStatusChange(
@@ -328,14 +365,17 @@ async function handleStatusChange(
             </div>
 
             <div class="card-metadata-list">
-              <span>{{ game.platform || t('detail.anywhere') }}</span>
-              <span v-if="game.ownershipType" class="soft-meta">
-                {{ ownershipLabel(game.ownershipType) }}
-              </span>
-              <span v-for="tag in game.tags" :key="tag">{{ tag }}</span>
-              <span v-if="formatTimeToBeat(game)" class="soft-meta">{{ formatTimeToBeat(game) }}</span>
-              <span v-if="game.rating !== null" class="rating">{{ game.rating }}/10</span>
-              <span v-if="game.finishedAt" class="soft-meta">{{ t('library.finishedOn', { date: game.finishedAt }) }}</span>
+              <template
+                v-for="(item, index) in listMetadata.get(game.id) ?? []"
+                :key="`${game.id}-${item}-${index}`"
+              >
+                <span>{{ item }}</span>
+                <span
+                  v-if="index < (listMetadata.get(game.id)?.length ?? 0) - 1"
+                  class="metadata-separator"
+                  aria-hidden="true"
+                >&nbsp;· </span>
+              </template>
             </div>
 
             <div class="card-state-row">

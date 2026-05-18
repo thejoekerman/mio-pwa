@@ -8,8 +8,9 @@ import {
   createGameJournalMarkdown,
   downloadMarkdownFile,
 } from '../lib/journalExport'
+import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
 import { getTimeToBeatHours } from '../lib/timeToBeat'
-import type { Game, LogEntry } from '../types'
+import { GAME_STATUSES, type Game, type GameStatus, type LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
 const router = useRouter()
@@ -22,6 +23,7 @@ const props = defineProps<{
   logs: LogEntry[]
   reviewDraftPreview: string
   selectedGame: Game | null
+  changeGameStatus: (game: Game, status: GameStatus) => void | Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -75,6 +77,24 @@ const journalMarkdown = computed(() => {
       : null,
     statusLabel: statusLabel(props.selectedGame.status),
   })
+})
+const detailMetadata = computed(() => {
+  if (!props.selectedGame) {
+    return []
+  }
+
+  const game = props.selectedGame
+
+  return [
+    game.platform || t('detail.anywhere'),
+    game.ownershipType ? ownershipLabel(game.ownershipType) : null,
+    game.rating !== null ? `${game.rating}/10` : null,
+    game.playTimeHours !== null ? `${game.playTimeHours} h` : null,
+    game.releaseYear ? String(game.releaseYear) : null,
+    formatTimeToBeat(game) ? `${formatTimeToBeat(game)} TTB` : null,
+    igdbCreditLine(game),
+    ...game.tags,
+  ].filter((item): item is string => Boolean(item))
 })
 
 watch(
@@ -166,9 +186,13 @@ function formatTimeToBeat(game: Game) {
   return hours === null ? null : `~${hours} h`
 }
 
+async function handleStatusChange(game: Game, status: GameStatus) {
+  await props.changeGameStatus(game, status)
+}
+
 function igdbCreditLine(game: Game) {
-  const developers = game.igdbDevelopers?.join(', ') ?? ''
-  const publishers = game.igdbPublishers?.join(', ') ?? ''
+  const developers = getDisplayDeveloper(game)
+  const publishers = getDisplayPublisher(game)
 
   if (developers && publishers) {
     return t('detail.igdbCreditsFull', { developers, publishers })
@@ -224,13 +248,36 @@ function igdbCreditLine(game: Game) {
           </RouterLink>
         </div>
         <div class="detail-hero-copy">
-          <p class="section-kicker">{{ statusLabel(selectedGame.status) }}</p>
           <h2>{{ selectedGame.title }}</h2>
-          <p class="meta">{{ selectedGame.platform || t('detail.anywhere') }}</p>
-          <p v-if="igdbCreditLine(selectedGame)" class="meta">{{ igdbCreditLine(selectedGame) }}</p>
-          <ul v-if="selectedGame.tags.length > 0" class="tag-list">
-            <li v-for="tag in selectedGame.tags" :key="tag">{{ tag }}</li>
-          </ul>
+          <div class="detail-hero-control-row">
+          <VMenu location="bottom start">
+            <template #activator="{ props: activatorProps }">
+              <button
+                v-bind="activatorProps"
+                type="button"
+                class="status-pill detail-status-pill"
+              >
+                {{ statusLabel(selectedGame.status) }}
+              </button>
+            </template>
+
+            <VList class="status-menu-list" density="compact">
+              <VListItem
+                v-for="status in GAME_STATUSES"
+                :key="status"
+                :active="selectedGame.status === status"
+                :title="statusLabel(status)"
+                @click="handleStatusChange(selectedGame, status)"
+              />
+            </VList>
+          </VMenu>
+            <div class="card-metadata-list detail-hero-metadata">
+              <template v-for="(item, index) in detailMetadata" :key="`${item}-${index}`">
+                <span>{{ item }}</span>
+                <span v-if="index < detailMetadata.length - 1" class="metadata-separator" aria-hidden="true">&nbsp;· </span>
+              </template>
+            </div>
+          </div>
           <a
             v-if="selectedGame.igdbUrl"
             class="detail-meta-link"
@@ -240,37 +287,6 @@ function igdbCreditLine(game: Game) {
           >
             {{ t('detail.openIgdb') }}
           </a>
-        </div>
-      </div>
-
-      <div class="detail-overview">
-        <div class="overview-card">
-          <strong>{{ logs.length }}</strong>
-          <span>{{ t('detail.sessionNotes') }}</span>
-        </div>
-        <div class="overview-card">
-          <strong>{{ statusLabel(selectedGame.status) }}</strong>
-          <span>{{ t('detail.currentStatus') }}</span>
-        </div>
-        <div class="overview-card">
-          <strong>{{ selectedGame.platform || t('detail.anywhere') }}</strong>
-          <span>{{ t('detail.platform') }}</span>
-        </div>
-        <div v-if="selectedGame.ownershipType" class="overview-card">
-          <strong>{{ ownershipLabel(selectedGame.ownershipType) }}</strong>
-          <span>{{ t('detail.ownershipType') }}</span>
-        </div>
-        <div v-if="selectedGame.rating !== null" class="overview-card">
-          <strong>{{ selectedGame.rating }}/10</strong>
-          <span>{{ t('detail.rating') }}</span>
-        </div>
-        <div v-if="selectedGame.playTimeHours !== null" class="overview-card">
-          <strong>{{ selectedGame.playTimeHours }} h</strong>
-          <span>{{ t('detail.playTime') }}</span>
-        </div>
-        <div v-if="formatTimeToBeat(selectedGame)" class="overview-card">
-          <strong>{{ formatTimeToBeat(selectedGame) }}</strong>
-          <span>{{ t('detail.timeToBeat') }}</span>
         </div>
       </div>
 
@@ -321,29 +337,39 @@ function igdbCreditLine(game: Game) {
       </div>
 
       <div class="detail-log-zone">
-        <div class="section-heading compact">
-          <div>
+        <div class="section-heading compact detail-log-header">
+          <div class="detail-log-title">
             <p class="section-kicker">{{ t('detail.sessionNotes') }}</p>
+            <span class="detail-log-count">{{ logs.length }}</span>
           </div>
           <div class="detail-log-actions">
-            <VBtn
+            <button
+              class="icon-button"
               type="button"
-              variant="outlined"
-              color="primary"
               :disabled="!canShareJournal"
+              :aria-label="t('detail.copyJournal')"
+              :title="t('detail.copyJournal')"
               @click="copyJournal"
             >
-              {{ t('detail.copyJournal') }}
-            </VBtn>
-            <VBtn
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect width="14" height="14" x="8" y="8" rx="2" />
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+              </svg>
+            </button>
+            <button
+              class="icon-button"
               type="button"
-              variant="outlined"
-              color="primary"
               :disabled="!canShareJournal"
+              :aria-label="t('detail.exportJournal')"
+              :title="t('detail.exportJournal')"
               @click="exportJournal"
             >
-              {{ t('detail.exportJournal') }}
-            </VBtn>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <path d="M7 10l5 5 5-5" />
+                <path d="M12 15V3" />
+              </svg>
+            </button>
           </div>
         </div>
 

@@ -25,6 +25,7 @@ interface AppSettingsState {
   backupReminderDismissedAt: string | null
   aiReviewDraftAvailable: boolean
   aiPlayNextAvailable: boolean
+  igdbMetadataAvailable: boolean
 }
 
 function detectBrowserLanguage(): AppLanguage {
@@ -120,6 +121,10 @@ function readStoredSettings(): Partial<AppSettingsState> {
       nextState.aiPlayNextAvailable = parsed.aiPlayNextAvailable
     }
 
+    if (typeof parsed.igdbMetadataAvailable === 'boolean') {
+      nextState.igdbMetadataAvailable = parsed.igdbMetadataAvailable
+    }
+
     return nextState
   } catch {
     return {}
@@ -142,6 +147,7 @@ function createSettingsStore() {
     backupReminderDismissedAt: stored.backupReminderDismissedAt ?? null,
     aiReviewDraftAvailable: stored.aiReviewDraftAvailable ?? false,
     aiPlayNextAvailable: stored.aiPlayNextAvailable ?? false,
+    igdbMetadataAvailable: stored.igdbMetadataAvailable ?? false,
   })
 
   watch(
@@ -167,6 +173,7 @@ function createSettingsStore() {
         value.backupReminderDismissedAt = null
         value.aiReviewDraftAvailable = false
         value.aiPlayNextAvailable = false
+        value.igdbMetadataAvailable = false
       }
 
       window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(value))
@@ -214,9 +221,14 @@ function createSettingsStore() {
     settings.aiPlayNextAvailable = value
   }
 
+  function setIgdbMetadataAvailable(value: boolean) {
+    settings.igdbMetadataAvailable = value
+  }
+
   return {
     setAiPlayNextAvailable,
     setAiReviewDraftAvailable,
+    setIgdbMetadataAvailable,
     setAutoSyncEnabled,
     setBackupReminderDismissedAt,
     setLanguage,

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import {
   GAME_OWNERSHIP_TYPES,
+  GAME_PRIORITIES,
   GAME_STATUSES,
   PLATFORM_OPTIONS,
   SUGGESTED_TAGS,
@@ -18,11 +19,11 @@ interface WikidataSuggestion {
 
 const props = defineProps<{
   canRateCurrentStatus: boolean
+  canUseIgdbMetadata: boolean
   createdAt?: string | null
   formatDate?: (value: string) => string
   form: GameFormState
   isSaving: boolean
-  isSyncConfigured: boolean
   updatedAt?: string | null
 }>()
 
@@ -92,6 +93,14 @@ const pauseNudgeOptions = computed(() => {
 
   return options
 })
+
+const priorityOptions = computed(() => [
+  { title: t('form.priorityUnset'), value: '' },
+  ...GAME_PRIORITIES.map((priority) => ({
+    title: t(`priority.${priority}`),
+    value: priority,
+  })),
+])
 
 const suggestedTagOptions = computed(() =>
   SUGGESTED_TAGS.map((tag) => ({
@@ -610,29 +619,82 @@ function addDaysDate(days: number) {
         @update:model-value="updateTags"
       />
 
-      <VTextField
-        v-if="isSyncConfigured"
-        v-model="form.igdbId"
-        class="form-control"
-        type="text"
-        inputmode="numeric"
-        :hint="t('form.igdbIdHint')"
-        :label="t('form.igdbId')"
-        persistent-hint
-        :placeholder="t('form.igdbIdPlaceholder')"
-      />
+      <VExpansionPanels class="more-details-panel" variant="accordion">
+        <VExpansionPanel>
+          <VExpansionPanelTitle>{{ t('form.moreDetails') }}</VExpansionPanelTitle>
+          <VExpansionPanelText>
+            <div class="more-details-fields">
+              <VTextField
+                v-if="canUseIgdbMetadata"
+                v-model="form.igdbId"
+                class="form-control"
+                type="text"
+                inputmode="numeric"
+                :hint="t('form.igdbIdHint')"
+                :label="t('form.igdbId')"
+                persistent-hint
+                :placeholder="t('form.igdbIdPlaceholder')"
+              />
 
-      <VTextField
-        v-else
-        v-model="form.coverUrl"
-        class="form-control"
-        type="url"
-        inputmode="url"
-        :hint="t('form.coverUrlHint')"
-        :label="t('form.coverUrl')"
-        persistent-hint
-        :placeholder="t('form.coverUrlPlaceholder')"
-      />
+              <VTextField
+                v-model="form.coverUrl"
+                class="form-control"
+                type="url"
+                inputmode="url"
+                :hint="t('form.coverUrlHint')"
+                :label="t('form.coverUrl')"
+                persistent-hint
+                :placeholder="t('form.coverUrlPlaceholder')"
+              />
+
+              <div class="split-fields">
+                <VTextField
+                  v-model="form.releaseYear"
+                  class="form-control"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="4"
+                  :hint="t('form.releaseYearHint')"
+                  :label="t('form.releaseYear')"
+                  persistent-hint
+                  :placeholder="t('form.releaseYearPlaceholder')"
+                />
+
+                <VSelect
+                  v-model="form.priority"
+                  class="form-control"
+                  :hint="t('form.priorityHint')"
+                  :items="priorityOptions"
+                  :label="t('form.priority')"
+                  persistent-hint
+                />
+              </div>
+
+              <div class="split-fields">
+                <VTextField
+                  v-model="form.developer"
+                  class="form-control"
+                  type="text"
+                  :hint="t('form.developerHint')"
+                  :label="t('form.developer')"
+                  persistent-hint
+                  :placeholder="t('form.developerPlaceholder')"
+                />
+
+                <VTextField
+                  v-model="form.publisher"
+                  class="form-control"
+                  type="text"
+                  :hint="t('form.publisherHint')"
+                  :label="t('form.publisher')"
+                  persistent-hint
+                  :placeholder="t('form.publisherPlaceholder')"
+                />
+              </div>
+            </div>
+          </VExpansionPanelText>
+        </VExpansionPanel>
+      </VExpansionPanels>
 
       <VTextarea
         v-if="form.id"
