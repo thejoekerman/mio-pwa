@@ -23,6 +23,7 @@ const {
   selectedGame,
   setFeedback,
   updateLogEntry,
+  updateGameStatus,
 } =
   useBacklog()
 
@@ -60,6 +61,7 @@ function handleJournalExported() {
       :can-use-review-draft="canUseReviewDraft"
       :format-date="formatDate"
       :is-drafting-review="isDraftingReview"
+      :change-game-status="updateGameStatus"
       :log-draft="logDraft"
       :logs="logs"
       :review-draft-preview="reviewDraftPreview"

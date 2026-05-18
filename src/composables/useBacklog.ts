@@ -24,6 +24,7 @@ import {
 import { translate, getStatusLabel } from '../i18n'
 import { useSettings } from './useSettings'
 import { isDemoMode } from '../lib/appMode'
+import { getDisplayDeveloper, getDisplayPublisher, normalizeReleaseYear } from '../lib/gameMetadata'
 import { createTrophyViews, evaluateTrophies } from '../lib/trophies'
 import type {
   BackupData,
@@ -46,6 +47,7 @@ function createBacklogStore() {
     setAiPlayNextAvailable,
     setAiReviewDraftAvailable,
     setBackupReminderDismissedAt,
+    setIgdbMetadataAvailable,
     setLastBackupExportedAt,
     setLastSyncError,
     setLastSyncedAt,
@@ -93,6 +95,10 @@ function createBacklogStore() {
     ownershipType: '',
     tags: '',
     igdbId: '',
+    releaseYear: '',
+    priority: '',
+    developer: '',
+    publisher: '',
     coverUrl: '',
     review: '',
     finishedAt: '',
@@ -151,6 +157,10 @@ function createBacklogStore() {
         query.length === 0 ||
         game.title.toLowerCase().includes(query) ||
         game.platform.toLowerCase().includes(query) ||
+        String(game.releaseYear ?? '').includes(query) ||
+        (game.priority?.replace(/-/g, ' ').toLowerCase().includes(query) ?? false) ||
+        getDisplayDeveloper(game).toLowerCase().includes(query) ||
+        getDisplayPublisher(game).toLowerCase().includes(query) ||
         game.tags.some((tag) => tag.toLowerCase().includes(query))
 
       return matchesStatus && matchesOwnership && matchesFinishedYear && matchesQuery
@@ -160,6 +170,10 @@ function createBacklogStore() {
       switch (sortOption.value) {
         case 'title-asc':
           return left.title.localeCompare(right.title)
+        case 'developer-asc':
+          return compareMetadata(getDisplayDeveloper(left), getDisplayDeveloper(right), left, right)
+        case 'publisher-asc':
+          return compareMetadata(getDisplayPublisher(left), getDisplayPublisher(right), left, right)
         case 'created-desc':
           if (statusFilter.value === 'finished') {
             return compareFinishedAt(right, left)
@@ -187,6 +201,22 @@ function createBacklogStore() {
     const rightTime = right.finishedAt ? new Date(right.finishedAt).getTime() : 0
 
     return leftTime - rightTime || left.title.localeCompare(right.title)
+  }
+
+  function compareMetadata(leftValue: string, rightValue: string, left: Game, right: Game) {
+    if (leftValue && rightValue) {
+      return leftValue.localeCompare(rightValue) || left.title.localeCompare(right.title)
+    }
+
+    if (leftValue) {
+      return -1
+    }
+
+    if (rightValue) {
+      return 1
+    }
+
+    return left.title.localeCompare(right.title)
   }
 
   const stats = computed(() => {
@@ -443,6 +473,10 @@ function createBacklogStore() {
     gameForm.ownershipType = ''
     gameForm.tags = ''
     gameForm.igdbId = ''
+    gameForm.releaseYear = ''
+    gameForm.priority = ''
+    gameForm.developer = ''
+    gameForm.publisher = ''
     gameForm.coverUrl = ''
     gameForm.review = ''
     gameForm.finishedAt = ''
@@ -468,6 +502,10 @@ function createBacklogStore() {
     gameForm.ownershipType = game.ownershipType ?? ''
     gameForm.tags = game.tags.join(', ')
     gameForm.igdbId = game.igdbId === null ? '' : String(game.igdbId)
+    gameForm.releaseYear = game.releaseYear ? String(game.releaseYear) : ''
+    gameForm.priority = game.priority ?? ''
+    gameForm.developer = game.developer ?? ''
+    gameForm.publisher = game.publisher ?? ''
     gameForm.coverUrl = game.coverUrl ?? ''
     gameForm.review = game.review
     gameForm.finishedAt = game.finishedAt ?? ''
@@ -622,9 +660,14 @@ function createBacklogStore() {
         parsedIgdbId === null || Number.isNaN(parsedIgdbId) || parsedIgdbId <= 0
           ? null
           : parsedIgdbId
+      const manualDeveloper = gameForm.developer.trim()
+      const manualPublisher = gameForm.publisher.trim()
       const manualCoverUrl = gameForm.coverUrl.trim()
       const isSyncConfigured = settings.syncApiBaseUrl.trim() !== '' && settings.syncToken.trim() !== ''
-      const shouldPreserveIgdbMetadata = isSyncConfigured && existingPlain?.igdbId === normalizedIgdbId
+      const canEditIgdbMetadata = isSyncConfigured && settings.igdbMetadataAvailable
+      const nextIgdbId = canEditIgdbMetadata ? normalizedIgdbId : existingPlain?.igdbId ?? null
+      const shouldPreserveIgdbMetadata = isSyncConfigured && existingPlain?.igdbId === nextIgdbId
+      const normalizedReleaseYear = normalizeReleaseYear(gameForm.releaseYear)
 
       if (canRateCurrentStatus.value && normalizedRating !== null) {
         gameForm.rating = String(normalizedRating)
@@ -634,8 +677,12 @@ function createBacklogStore() {
         gameForm.playTimeHours = String(normalizedPlayTime)
       }
 
-      if (normalizedIgdbId !== null) {
+      if (canEditIgdbMetadata && normalizedIgdbId !== null) {
         gameForm.igdbId = String(normalizedIgdbId)
+      }
+
+      if (normalizedReleaseYear !== null) {
+        gameForm.releaseYear = String(normalizedReleaseYear)
       }
 
       const game: Game = {
@@ -647,7 +694,7 @@ function createBacklogStore() {
         platform: gameForm.platform.trim(),
         ownershipType: gameForm.ownershipType || null,
         tags: parseTags(gameForm.tags),
-        igdbId: isSyncConfigured ? normalizedIgdbId : null,
+        igdbId: isSyncConfigured ? nextIgdbId : null,
         igdbUrl: shouldPreserveIgdbMetadata ? existingPlain?.igdbUrl ?? null : null,
         igdbTtbHastilySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbHastilySeconds ?? null : null,
         igdbTtbNormallySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbNormallySeconds ?? null : null,
@@ -658,11 +705,11 @@ function createBacklogStore() {
         igdbPublishers: shouldPreserveIgdbMetadata ? existingPlain?.igdbPublishers ?? null : null,
         igdbThemes: shouldPreserveIgdbMetadata ? existingPlain?.igdbThemes ?? null : null,
         igdbGameModes: shouldPreserveIgdbMetadata ? existingPlain?.igdbGameModes ?? null : null,
-        coverUrl: isSyncConfigured
-          ? shouldPreserveIgdbMetadata
-            ? existingPlain?.coverUrl ?? null
-            : null
-          : manualCoverUrl || null,
+        releaseYear: normalizedReleaseYear ?? (shouldPreserveIgdbMetadata ? existingPlain?.releaseYear ?? null : null),
+        priority: gameForm.priority || null,
+        developer: manualDeveloper || null,
+        publisher: manualPublisher || null,
+        coverUrl: manualCoverUrl || (shouldPreserveIgdbMetadata ? existingPlain?.coverUrl ?? null : null),
         review: gameForm.review.trim(),
         finishedAt:
           gameForm.status === 'finished'
@@ -1036,6 +1083,7 @@ function createBacklogStore() {
       )
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
       setAiPlayNextAvailable(response.capabilities.playNext)
+      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
       setLastSyncError(null)
 
       return response
@@ -1065,6 +1113,7 @@ function createBacklogStore() {
 
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
       setAiPlayNextAvailable(response.capabilities.playNext)
+      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
     } catch {
       // Keep the latest known capability state when the startup refresh fails.
     }
@@ -1091,6 +1140,7 @@ function createBacklogStore() {
           )
           setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
           setAiPlayNextAvailable(connection.capabilities.playNext)
+          setIgdbMetadataAvailable(connection.capabilities.igdbMetadata ?? true)
         } catch {
           // Keep the latest known capability state when the refresh call fails.
         }

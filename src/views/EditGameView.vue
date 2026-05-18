@@ -30,8 +30,11 @@ const routeGameId = computed(() =>
 )
 const gamePendingDelete = ref<Game | null>(null)
 const deleteDialogOpen = ref(false)
-const isSyncConfigured = computed(
+const canUseIgdbMetadata = computed(
   () => settings.syncApiBaseUrl.trim() !== '' && settings.syncToken.trim() !== '',
+)
+const canEditIgdbMetadata = computed(
+  () => canUseIgdbMetadata.value && settings.igdbMetadataAvailable,
 )
 
 watch(
@@ -129,11 +132,11 @@ async function confirmDelete() {
   <div class="view-stack">
     <GameFormPanel
       :can-rate-current-status="canRateCurrentStatus"
+      :can-use-igdb-metadata="canEditIgdbMetadata"
       :created-at="games.find((entry) => entry.id === routeGameId)?.createdAt ?? null"
       :format-date="formatDate"
       :form="gameForm"
       :is-saving="isSaving"
-      :is-sync-configured="isSyncConfigured"
       :updated-at="games.find((entry) => entry.id === routeGameId)?.updatedAt ?? null"
       @cancel="handleCancel"
       @delete="handleDelete"

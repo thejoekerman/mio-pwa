@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import {
   GAME_OWNERSHIP_TYPES,
+  GAME_PRIORITIES,
   GAME_STATUSES,
   type BackupData,
   type BackupImportMode,
@@ -17,7 +18,7 @@ type StoredGame = Omit<Game, 'ownershipType'> & {
   ownershipType?: unknown
 }
 
-const BACKUP_VERSION = 8
+const BACKUP_VERSION = 10
 
 class BacklogDatabase extends Dexie {
   games!: EntityTable<Game, 'id'>
@@ -146,6 +147,10 @@ function normalizeStoredGame(game: StoredGame): Game {
     igdbPublishers: asNullableStringList(game.igdbPublishers),
     igdbThemes: asNullableStringList(game.igdbThemes),
     igdbGameModes: asNullableStringList(game.igdbGameModes),
+    releaseYear: asNullableReleaseYear(game.releaseYear),
+    priority: asNullablePriority(game.priority),
+    developer: asNullableString(game.developer),
+    publisher: asNullableString(game.publisher),
     coverUrl: typeof game.coverUrl === 'string' ? game.coverUrl : null,
     finishedAt: typeof game.finishedAt === 'string' ? game.finishedAt : null,
     pausedAt: typeof game.pausedAt === 'string' ? game.pausedAt : null,
@@ -291,6 +296,27 @@ function asNullableNonNegativeInteger(value: unknown) {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
 }
 
+function asNullableString(value: unknown) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+function asNullablePriority(value: unknown) {
+  return GAME_PRIORITIES.includes(value as (typeof GAME_PRIORITIES)[number])
+    ? value as (typeof GAME_PRIORITIES)[number]
+    : null
+}
+
+function asNullableReleaseYear(value: unknown) {
+  const nextYear = new Date().getFullYear() + 1
+
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1970 &&
+    value <= nextYear
+    ? value
+    : null
+}
+
 function asNullableOwnershipType(value: unknown): Game['ownershipType'] {
   return GAME_OWNERSHIP_TYPES.includes(value as (typeof GAME_OWNERSHIP_TYPES)[number])
     ? value as Game['ownershipType']
@@ -350,6 +376,10 @@ function normalizeGame(value: unknown): Game {
     igdbPublishers: asNullableStringList(value.igdbPublishers),
     igdbThemes: asNullableStringList(value.igdbThemes),
     igdbGameModes: asNullableStringList(value.igdbGameModes),
+    releaseYear: asNullableReleaseYear(value.releaseYear),
+    priority: asNullablePriority(value.priority),
+    developer: asNullableString(value.developer),
+    publisher: asNullableString(value.publisher),
     finishedAt: typeof value.finishedAt === 'string' ? value.finishedAt : null,
     pausedAt: typeof value.pausedAt === 'string' ? value.pausedAt : null,
     nudgeAt: typeof value.nudgeAt === 'string' ? value.nudgeAt : null,
@@ -471,13 +501,41 @@ export async function createSyncSnapshot(): Promise<SyncSnapshot> {
 }
 
 export async function replaceWithSyncSnapshot(snapshot: SyncSnapshot) {
+  const existingGames = await getAllGames(true)
+  const localMetadataByGameId = new Map(
+    existingGames.map((game) => [
+      game.id,
+      {
+        developer: game.developer ?? null,
+        publisher: game.publisher ?? null,
+        releaseYear: game.releaseYear ?? null,
+        priority: game.priority ?? null,
+      },
+    ]),
+  )
+
   await db.transaction('rw', db.games, db.logs, db.earnedTrophies, async () => {
     await db.games.clear()
     await db.logs.clear()
     await db.earnedTrophies.clear()
 
     if (snapshot.games.length > 0) {
-      await db.games.bulkPut(snapshot.games.map(normalizeGame))
+      await db.games.bulkPut(
+        snapshot.games.map((game) => {
+          const normalizedGame = normalizeGame(game)
+          const localMetadata = localMetadataByGameId.get(normalizedGame.id)
+
+          return localMetadata
+            ? {
+                ...normalizedGame,
+                developer: normalizedGame.developer ?? localMetadata.developer,
+                publisher: normalizedGame.publisher ?? localMetadata.publisher,
+                releaseYear: normalizedGame.releaseYear ?? localMetadata.releaseYear,
+                priority: normalizedGame.priority ?? localMetadata.priority,
+              }
+            : normalizedGame
+        }),
+      )
     }
 
     if (snapshot.logs.length > 0) {

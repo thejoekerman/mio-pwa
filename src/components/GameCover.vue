@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +21,23 @@ const palettes = [
   ['#33475f', '#8fd0d6'],
   ['#5c4b91', '#d9b7ff'],
 ]
+const failedCoverUrl = ref<string | null>(null)
+const coverFit = ref<'fill' | 'contain' | null>(null)
+const visibleCoverUrl = computed(() =>
+  props.coverUrl && props.coverUrl !== failedCoverUrl.value ? props.coverUrl : null,
+)
+const coverStyle = computed(() => ({
+  ...fallbackStyle.value,
+  '--cover-image': visibleCoverUrl.value ? `url("${visibleCoverUrl.value}")` : 'none',
+}))
+
+watch(
+  () => props.coverUrl,
+  () => {
+    failedCoverUrl.value = null
+    coverFit.value = null
+  },
+)
 
 const fallbackStyle = computed(() => {
   const hash = [...props.title].reduce((total, character) => total + character.charCodeAt(0), 0)
@@ -49,17 +66,42 @@ const initials = computed(() => {
     .join('')
     .toUpperCase()
 })
+
+function handleCoverLoad(event: Event) {
+  const image = event.target
+
+  if (!(image instanceof HTMLImageElement)) {
+    return
+  }
+
+  const ratio = image.naturalWidth / image.naturalHeight
+  const frameRatio = 3 / 4
+
+  coverFit.value = Math.abs(ratio - frameRatio) <= 0.08 ? 'fill' : 'contain'
+}
 </script>
 
 <template>
   <div
     class="game-cover"
-    :class="`game-cover--${size}`"
-    :style="fallbackStyle"
+    :class="[
+      `game-cover--${size}`,
+      {
+        'game-cover--contained-source': coverFit === 'contain',
+      },
+    ]"
+    :style="coverStyle"
     role="img"
     :aria-label="title"
   >
-    <img v-if="coverUrl" :src="coverUrl" :alt="title" loading="lazy" />
+    <img
+      v-if="visibleCoverUrl"
+      :src="visibleCoverUrl"
+      :alt="title"
+      loading="lazy"
+      @load="handleCoverLoad"
+      @error="failedCoverUrl = visibleCoverUrl"
+    />
     <div v-else class="game-cover-fallback">
       <span class="game-cover-mark">{{ initials }}</span>
       <span class="game-cover-title">{{ title }}</span>
