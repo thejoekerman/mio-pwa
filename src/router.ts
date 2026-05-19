@@ -8,6 +8,7 @@ const JournalView = () => import('./views/JournalView.vue')
 const LibraryView = () => import('./views/LibraryView.vue')
 const SettingsView = () => import('./views/SettingsView.vue')
 const TrophiesView = () => import('./views/TrophiesView.vue')
+const WrappedView = () => import('./views/WrappedView.vue')
 
 export const router = createRouter({
   history: isDesktopMode ? createWebHashHistory() : createWebHistory(),
@@ -63,6 +64,11 @@ export const router = createRouter({
       path: '/trophies',
       name: 'trophies',
       component: TrophiesView,
+    },
+    {
+      path: '/wrapped',
+      name: 'wrapped',
+      component: WrappedView,
     },
   ],
 })
