@@ -1,34 +1,26 @@
 import { computed, reactive, ref, toRaw, watch } from 'vue'
 import {
-  createBackupData,
-  createSyncSnapshot,
   deleteGame,
   ensureDemoData,
   getAllEarnedTrophies,
   getAllGames,
   getAllLogs,
   getLogsForGame,
-  importBackupData,
-  replaceWithSyncSnapshot,
   resetDemoData,
-  saveEarnedTrophies,
   saveGame,
   saveLogEntry,
 } from '../lib/backlogDb'
-import {
-  requestPlayNextRecommendation,
-  requestReviewDraft,
-  syncWithBackend,
-  testSyncConnection as requestSyncConnection,
-} from '../lib/syncApi'
 import { translate, getStatusLabel } from '../i18n'
 import { useSettings } from './useSettings'
+import { createTrophyHandlers } from './trophies'
+import { createBackupHandlers } from './backup'
+import { createAiHandlers } from './aiFeatures'
+import { createSyncHandlers } from './sync'
 import { isDemoMode } from '../lib/appMode'
 import { getDisplayDeveloper, getDisplayPublisher, normalizeReleaseYear } from '../lib/gameMetadata'
-import { createTrophyViews, evaluateTrophies } from '../lib/trophies'
+import { createTrophyViews } from '../lib/trophies'
+import { isAtLeastDaysOld, getNextUpdatedAt } from '../lib/dateUtils'
 import type {
-  BackupData,
-  BackupImportMode,
   EarnedTrophy,
   FeedbackState,
   Game,
@@ -82,8 +74,7 @@ function createBacklogStore() {
   const autoSyncStarted = ref(false)
   const capabilityRefreshStarted = ref(false)
   let feedbackId = 0
-  let localChangeRevision = 0
-  let autoSyncTimer: number | null = null
+  const localChangeRevision = ref(0)
 
   const gameForm = reactive<GameFormState>({
     id: null,
@@ -337,33 +328,8 @@ function createBacklogStore() {
     return date.toISOString().slice(0, 10)
   }
 
-  function isAtLeastDaysOld(value: string | null, days: number) {
-    if (!value) {
-      return true
-    }
-
-    const timestamp = new Date(value).getTime()
-
-    if (!Number.isFinite(timestamp)) {
-      return true
-    }
-
-    return Date.now() - timestamp >= days * 24 * 60 * 60 * 1000
-  }
-
-  function getNextUpdatedAt(previousUpdatedAt?: string | null) {
-    const now = Date.now()
-    const previous = previousUpdatedAt ? new Date(previousUpdatedAt).getTime() : Number.NaN
-
-    if (Number.isFinite(previous) && now <= previous) {
-      return new Date(previous + 1000).toISOString()
-    }
-
-    return new Date(now).toISOString()
-  }
-
   function markLocalChange() {
-    localChangeRevision += 1
+    localChangeRevision.value += 1
   }
 
   function parseTags(value: string) {
@@ -384,66 +350,26 @@ function createBacklogStore() {
     return [...uniqueTags.values()]
   }
 
-  function ensureSyncConfig() {
-    if (!settings.syncApiBaseUrl.trim()) {
-      throw new Error(translate(settings.language, 'feedback.syncUrlMissing'))
-    }
-
-    if (!settings.syncToken.trim()) {
-      throw new Error(translate(settings.language, 'feedback.syncTokenMissing'))
+  /**
+   * Optimization: Update a game in-place instead of reloading the entire table.
+   * Used after saveGame to avoid O(n) full reload + O(n×trophies) re-evaluation.
+   */
+  function updateGameInPlace(updatedGame: Game) {
+    const index = games.value.findIndex((game) => game.id === updatedGame.id)
+    if (index !== -1) {
+      games.value[index] = updatedGame
     }
   }
 
-  function canAttemptSync() {
-    return (
-      !isDemoMode &&
-      settings.syncApiBaseUrl.trim().length > 0 &&
-      settings.syncToken.trim().length > 0 &&
-      (typeof navigator === 'undefined' || navigator.onLine)
-    )
-  }
-
-  function getSyncErrorMessage(
-    error: unknown,
-    fallbackKey:
-      | 'feedback.syncConnectionFailed'
-      | 'feedback.syncFailed'
-      | 'feedback.reviewDraftFailed'
-      | 'feedback.playNextFailed',
-  ) {
-    if (error instanceof TypeError) {
-      return translate(settings.language, fallbackKey)
+  /**
+   * Optimization: Remove a game in-place instead of reloading the entire table.
+   * Used after deleteGame to avoid O(n) full reload.
+   */
+  function removeGameInPlace(gameId: string) {
+    const index = games.value.findIndex((game) => game.id === gameId)
+    if (index !== -1) {
+      games.value.splice(index, 1)
     }
-
-    if (error instanceof Error) {
-      return error.message
-    }
-
-    return translate(settings.language, fallbackKey)
-  }
-
-  function scheduleAutoSync(delay = 1400) {
-    if (!settings.autoSyncEnabled || !canAttemptSync() || typeof window === 'undefined') {
-      return
-    }
-
-    if (autoSyncTimer !== null) {
-      window.clearTimeout(autoSyncTimer)
-    }
-
-    autoSyncTimer = window.setTimeout(() => {
-      autoSyncTimer = null
-
-      if (!settings.autoSyncEnabled || !canAttemptSync() || isSyncing.value) {
-        return
-      }
-
-      void syncNow({
-        source: 'auto',
-        silentSuccess: true,
-        errorFeedback: false,
-      })
-    }, delay)
   }
 
   function toPlainGame(game: Game): Game {
@@ -578,6 +504,7 @@ function createBacklogStore() {
       await loadLogs(selectedGameId.value)
       if (!didInitialize.value) {
         await unlockEarnedTrophies('startup')
+        void navigator.storage?.persist()
       }
       didInitialize.value = true
     } finally {
@@ -592,27 +519,43 @@ function createBacklogStore() {
     await loadLogs(gameId)
   }
 
-  async function unlockEarnedTrophies(source: TrophyUnlockSource) {
-    const newlyEarned = evaluateTrophies(games.value, allLogs.value, earnedTrophies.value)
+  let unlockEarnedTrophies!: (source: TrophyUnlockSource) => Promise<EarnedTrophy[]>
 
-    if (newlyEarned.length === 0) {
-      return []
-    }
+  const { ensureSyncConfig, scheduleAutoSync, startAutoSync, testSyncConnection, refreshSyncCapabilities, syncNow } =
+    createSyncHandlers({
+      games,
+      selectedGameId,
+      gameForm,
+      isSyncing,
+      isTestingSyncConnection,
+      autoSyncStarted,
+      capabilityRefreshStarted,
+      localChangeRevision,
+      settings,
+      ensureLoaded,
+      loadLogs,
+      unlockEarnedTrophies: (source) => unlockEarnedTrophies(source),
+      editGame,
+      resetForm,
+      setFeedback,
+      setAiReviewDraftAvailable,
+      setAiPlayNextAvailable,
+      setIgdbMetadataAvailable,
+      setLastSyncedAt,
+      setLastSyncError,
+    })
 
-    await saveEarnedTrophies(newlyEarned)
-    earnedTrophies.value = [...earnedTrophies.value, ...newlyEarned]
-    trophyUnlockQueue.value = [...trophyUnlockQueue.value, ...newlyEarned]
-    latestTrophyUnlockSource.value = source
-    markLocalChange()
-    scheduleAutoSync()
-
-    return newlyEarned
-  }
-
-  function dismissTrophyUnlocks() {
-    trophyUnlockQueue.value = []
-    latestTrophyUnlockSource.value = null
-  }
+  const trophyHandlers = createTrophyHandlers({
+    games,
+    allLogs,
+    earnedTrophies,
+    trophyUnlockQueue,
+    latestTrophyUnlockSource,
+    markLocalChange,
+    scheduleAutoSync,
+  })
+  unlockEarnedTrophies = trophyHandlers.unlockEarnedTrophies
+  const { dismissTrophyUnlocks } = trophyHandlers
 
   async function saveCurrentGame() {
     const title = gameForm.title.trim()
@@ -663,10 +606,9 @@ function createBacklogStore() {
       const manualDeveloper = gameForm.developer.trim()
       const manualPublisher = gameForm.publisher.trim()
       const manualCoverUrl = gameForm.coverUrl.trim()
-      const isSyncConfigured = settings.syncApiBaseUrl.trim() !== '' && settings.syncToken.trim() !== ''
-      const canEditIgdbMetadata = isSyncConfigured && settings.igdbMetadataAvailable
+      const canEditIgdbMetadata = isSyncConfigured.value && settings.igdbMetadataAvailable
       const nextIgdbId = canEditIgdbMetadata ? normalizedIgdbId : existingPlain?.igdbId ?? null
-      const shouldPreserveIgdbMetadata = isSyncConfigured && existingPlain?.igdbId === nextIgdbId
+      const shouldPreserveIgdbMetadata = isSyncConfigured.value && existingPlain?.igdbId === nextIgdbId
       const normalizedReleaseYear = normalizeReleaseYear(gameForm.releaseYear)
 
       if (canRateCurrentStatus.value && normalizedRating !== null) {
@@ -727,7 +669,11 @@ function createBacklogStore() {
 
       await saveGame(game)
       markLocalChange()
-      await loadGames()
+      if (existing) {
+        updateGameInPlace(game)
+      } else {
+        games.value.push(game)
+      }
       await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
       editGame(game)
@@ -745,7 +691,9 @@ function createBacklogStore() {
   async function removeGame(game: Game) {
     await deleteGame(game.id)
     markLocalChange()
-    await loadGames()
+    removeGameInPlace(game.id)
+    allLogs.value = allLogs.value.filter((log) => log.gameId !== game.id)
+    totalPlayLogCount.value = allLogs.value.length
     await loadLogs(selectedGameId.value)
     await unlockEarnedTrophies('user-action')
 
@@ -778,14 +726,17 @@ function createBacklogStore() {
     }
 
     await saveLogEntry(logEntry)
-    await saveGame({
+    const updatedGame = {
       ...currentGamePlain,
       updatedAt: now,
-    })
+    }
+    await saveGame(updatedGame)
     markLocalChange()
 
     logDraft.value = ''
-    await loadGames()
+    updateGameInPlace(updatedGame)
+    allLogs.value = [...allLogs.value, logEntry]
+    totalPlayLogCount.value = allLogs.value.length
     await loadLogs(currentGame.id)
     await unlockEarnedTrophies('user-action')
     setFeedback(translate(settings.language, 'feedback.logSaved'))
@@ -823,13 +774,14 @@ function createBacklogStore() {
     }
 
     await saveLogEntry(updatedLogEntry)
-    await saveGame({
+    const updatedGame = {
       ...currentGamePlain,
       updatedAt: now,
-    })
+    }
+    await saveGame(updatedGame)
     markLocalChange()
 
-    await loadGames()
+    updateGameInPlace(updatedGame)
     await loadLogs(currentGame.id)
     await unlockEarnedTrophies('user-action')
     setFeedback(translate(settings.language, 'feedback.logUpdated'))
@@ -866,7 +818,7 @@ function createBacklogStore() {
 
       await saveGame(updatedGame)
       markLocalChange()
-      await loadGames()
+      updateGameInPlace(updatedGame)
       await selectGame(updatedGame.id)
       await unlockEarnedTrophies('user-action')
 
@@ -907,7 +859,7 @@ function createBacklogStore() {
 
       await saveGame(updatedGame)
       markLocalChange()
-      await loadGames()
+      updateGameInPlace(updatedGame)
       await selectGame(updatedGame.id)
       await unlockEarnedTrophies('user-action')
 
@@ -933,325 +885,35 @@ function createBacklogStore() {
     }).format(new Date(value))
   }
 
-  async function exportBackup() {
-    const payload = await createBackupData()
+  const { exportBackup, dismissBackupReminder, importBackup } = createBackupHandlers({
+    selectedGameId,
+    settings,
+    setFeedback,
+    setLastBackupExportedAt,
+    setBackupReminderDismissedAt,
+    ensureLoaded,
+    loadLogs,
+    unlockEarnedTrophies,
+  })
 
-    setLastBackupExportedAt(payload.exportedAt)
-    setBackupReminderDismissedAt(null)
-
-    return payload
-  }
-
-  function dismissBackupReminder() {
-    setBackupReminderDismissedAt(new Date().toISOString())
-  }
-
-  async function importBackup(payload: BackupData, mode: BackupImportMode) {
-    const result = await importBackupData(payload, mode)
-
-    await ensureLoaded(true)
-    await unlockEarnedTrophies('import')
-
-    if (selectedGameId.value) {
-      await loadLogs(selectedGameId.value)
-    }
-
-    setFeedback(
-      translate(
-        settings.language,
-        mode === 'replace' ? 'feedback.backupRestored' : 'feedback.backupMerged',
-        {
-          games: result.games,
-          logs: result.logs,
-        },
-      ),
-    )
-
-    return result
-  }
-
-  async function performSync(options?: { silentSuccess?: boolean }) {
-    await ensureLoaded()
-    const syncStartedAtRevision = localChangeRevision
-    const snapshot = await createSyncSnapshot()
-    const response = await syncWithBackend(
-      settings.syncApiBaseUrl,
-      settings.syncToken,
-      snapshot,
-    )
-
-    if (syncStartedAtRevision !== localChangeRevision) {
-      if (!options?.silentSuccess) {
-        setFeedback(translate(settings.language, 'feedback.syncSkippedLocalChanges'), 'info')
-      }
-
-      return response
-    }
-
-    await replaceWithSyncSnapshot({
-      games: response.games,
-      logs: response.logs,
-      earnedTrophies: response.earnedTrophies ?? snapshot.earnedTrophies,
+  const { generateReviewDraft, generatePlayNextRecommendation, applyReviewDraft, discardReviewDraft } =
+    createAiHandlers({
+      selectedGame,
+      gameForm,
+      settings,
+      isDraftingReview,
+      reviewDraftPreview,
+      playNextRecommendations,
+      isGeneratingPlayNextRecommendation,
+      setFeedback,
+      ensureSyncConfig,
+      toPlainGame,
+      updateGameInPlace,
+      selectGame,
+      editGame,
+      markLocalChange,
+      scheduleAutoSync,
     })
-    await ensureLoaded(true)
-
-    if (selectedGameId.value) {
-      await loadLogs(selectedGameId.value)
-    }
-
-    await unlockEarnedTrophies('sync')
-
-    if (gameForm.id) {
-      const refreshedGame = games.value.find((game) => game.id === gameForm.id)
-
-      if (refreshedGame) {
-        editGame(refreshedGame)
-      } else {
-        resetForm()
-      }
-    }
-
-    setLastSyncedAt(response.syncedAt)
-    setLastSyncError(null)
-
-    if (!options?.silentSuccess) {
-      setFeedback(
-        translate(settings.language, 'feedback.syncCompleted', {
-          games: response.games.filter((game) => game.deletedAt === null).length,
-          logs: response.logs.filter((logEntry) => logEntry.deletedAt === null).length,
-        }),
-      )
-    }
-
-    return response
-  }
-
-  function startAutoSync() {
-    if (autoSyncStarted.value || typeof window === 'undefined') {
-      return
-    }
-
-    autoSyncStarted.value = true
-
-    window.addEventListener('focus', () => {
-      if (!settings.autoSyncEnabled || !canAttemptSync() || isSyncing.value) {
-        return
-      }
-
-      void syncNow({
-        source: 'auto',
-        silentSuccess: true,
-        errorFeedback: false,
-      })
-    })
-
-    window.addEventListener('online', () => {
-      if (!settings.autoSyncEnabled || !canAttemptSync() || isSyncing.value) {
-        return
-      }
-
-      void syncNow({
-        source: 'auto',
-        silentSuccess: true,
-        errorFeedback: false,
-      })
-    })
-
-    if (settings.autoSyncEnabled && canAttemptSync()) {
-      void syncNow({
-        source: 'auto',
-        silentSuccess: true,
-        errorFeedback: false,
-      })
-    }
-  }
-
-  async function testSyncConnection() {
-    isTestingSyncConnection.value = true
-
-    try {
-      ensureSyncConfig()
-      const response = await requestSyncConnection(
-        settings.syncApiBaseUrl,
-        settings.syncToken,
-      )
-
-      setFeedback(
-        translate(settings.language, 'feedback.syncConnectionOk', {
-          name: response.user.displayName || response.user.email || `#${response.user.id}`,
-        }),
-      )
-      setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setAiPlayNextAvailable(response.capabilities.playNext)
-      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
-      setLastSyncError(null)
-
-      return response
-    } catch (error) {
-      const message = getSyncErrorMessage(error, 'feedback.syncConnectionFailed')
-
-      setLastSyncError(message)
-      setFeedback(message, 'error')
-      throw new Error(message)
-    } finally {
-      isTestingSyncConnection.value = false
-    }
-  }
-
-  async function refreshSyncCapabilities() {
-    if (capabilityRefreshStarted.value || !canAttemptSync()) {
-      return
-    }
-
-    capabilityRefreshStarted.value = true
-
-    try {
-      const response = await requestSyncConnection(
-        settings.syncApiBaseUrl,
-        settings.syncToken,
-      )
-
-      setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setAiPlayNextAvailable(response.capabilities.playNext)
-      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
-    } catch {
-      // Keep the latest known capability state when the startup refresh fails.
-    }
-  }
-
-  async function syncNow(options?: {
-    source?: 'manual' | 'auto'
-    silentSuccess?: boolean
-    errorFeedback?: boolean
-  }) {
-    isSyncing.value = true
-
-    try {
-      ensureSyncConfig()
-      const response = await performSync({
-        silentSuccess: options?.silentSuccess,
-      })
-
-      if (options?.source !== 'auto') {
-        try {
-          const connection = await requestSyncConnection(
-            settings.syncApiBaseUrl,
-            settings.syncToken,
-          )
-          setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
-          setAiPlayNextAvailable(connection.capabilities.playNext)
-          setIgdbMetadataAvailable(connection.capabilities.igdbMetadata ?? true)
-        } catch {
-          // Keep the latest known capability state when the refresh call fails.
-        }
-      }
-
-      return response
-    } catch (error) {
-      const message = getSyncErrorMessage(error, 'feedback.syncFailed')
-
-      setLastSyncError(message)
-
-      if (options?.errorFeedback !== false) {
-        setFeedback(message, 'error')
-      }
-
-      throw new Error(message)
-    } finally {
-      isSyncing.value = false
-    }
-  }
-
-  async function generateReviewDraft() {
-    const currentGame = selectedGame.value
-
-    if (!currentGame) {
-      return
-    }
-
-    ensureSyncConfig()
-    isDraftingReview.value = true
-
-    try {
-      const response = await requestReviewDraft(
-        settings.syncApiBaseUrl,
-        settings.syncToken,
-        currentGame.id,
-        settings.language,
-      )
-
-      reviewDraftPreview.value = response.draft.trim()
-
-      return response
-    } catch (error) {
-      const message = getSyncErrorMessage(error, 'feedback.reviewDraftFailed')
-      setFeedback(message, 'error')
-      throw new Error(message)
-    } finally {
-      isDraftingReview.value = false
-    }
-  }
-
-  async function generatePlayNextRecommendation() {
-    ensureSyncConfig()
-    isGeneratingPlayNextRecommendation.value = true
-
-    try {
-      const response = await requestPlayNextRecommendation(
-        settings.syncApiBaseUrl,
-        settings.syncToken,
-        settings.language,
-      )
-
-      playNextRecommendations.value = response.recommendations.map((recommendation) => ({
-        slot: recommendation.slot,
-        gameId: recommendation.gameId,
-        title: recommendation.title.trim(),
-        reason: recommendation.reason.trim(),
-      }))
-
-      return response
-    } catch (error) {
-      const message = getSyncErrorMessage(error, 'feedback.playNextFailed')
-      setFeedback(message, 'error')
-      throw new Error(message)
-    } finally {
-      isGeneratingPlayNextRecommendation.value = false
-    }
-  }
-
-  async function applyReviewDraft() {
-    const currentGame = selectedGame.value
-    const draft = reviewDraftPreview.value.trim()
-
-    if (!currentGame || !draft) {
-      return
-    }
-
-    const currentGamePlain = toPlainGame(currentGame)
-    const updatedGame: Game = {
-      ...currentGamePlain,
-      review: draft,
-      updatedAt: getNextUpdatedAt(currentGamePlain.updatedAt),
-    }
-
-    await saveGame(updatedGame)
-    markLocalChange()
-    reviewDraftPreview.value = ''
-    await loadGames()
-    await selectGame(updatedGame.id)
-
-    if (gameForm.id === updatedGame.id) {
-      editGame(updatedGame)
-    }
-
-    setFeedback(translate(settings.language, 'feedback.reviewDraftApplied'))
-    scheduleAutoSync()
-  }
-
-  function discardReviewDraft() {
-    reviewDraftPreview.value = ''
-  }
 
   async function resetDemoLibrary() {
     if (!isDemoMode) {

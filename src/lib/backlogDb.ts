@@ -285,7 +285,12 @@ function asString(value: unknown, fallback = '') {
 }
 
 function asNullableRating(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 10
+    ? value
+    : null
 }
 
 function asNullablePositiveInteger(value: unknown) {
@@ -338,7 +343,7 @@ function asNullableStringList(value: unknown) {
   ]
 }
 
-function normalizeGame(value: unknown): Game {
+export function normalizeGame(value: unknown): Game {
   if (!isRecord(value)) {
     throw new Error('Backup contains an invalid game entry.')
   }

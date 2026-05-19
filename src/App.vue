@@ -38,13 +38,31 @@ function updateTopbarDensity() {
   topbarCompact.value = window.scrollY > 24
 }
 
+/**
+ * Throttled scroll handler using requestAnimationFrame.
+ * Ensures updateTopbarDensity runs at most once per frame.
+ */
+let pendingScroll = false
+
+function handleScrollThrottled() {
+  if (pendingScroll) {
+    return
+  }
+
+  pendingScroll = true
+  requestAnimationFrame(() => {
+    updateTopbarDensity()
+    pendingScroll = false
+  })
+}
+
 onMounted(() => {
   updateTopbarDensity()
-  window.addEventListener('scroll', updateTopbarDensity, { passive: true })
+  window.addEventListener('scroll', handleScrollThrottled, { passive: true })
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', updateTopbarDensity)
+  window.removeEventListener('scroll', handleScrollThrottled)
 })
 
 watch(

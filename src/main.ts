@@ -7,7 +7,8 @@ import { appDisplayName, isDemoMode, isDesktopMode } from './lib/appMode'
 
 document.title = appDisplayName
 
-createApp(App).use(vuetify).use(router).mount('#app')
+const app = createApp(App).use(vuetify).use(router)
+router.isReady().then(() => app.mount('#app'))
 
 if ('serviceWorker' in navigator) {
   if (import.meta.env.PROD && !isDemoMode && !isDesktopMode) {

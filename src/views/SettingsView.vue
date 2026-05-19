@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import packageJson from '../../package.json'
 import { useBacklog } from '../composables/useBacklog'
 import { useSettings } from '../composables/useSettings'
 import { useI18n } from '../i18n'
@@ -7,7 +8,7 @@ import { APP_LANGUAGES, APP_THEMES, type BackupData, type BackupImportMode } fro
 import { isDemoMode } from '../lib/appMode'
 import { downloadBackupPayload } from '../lib/backupDownload'
 
-const appVersion = __APP_VERSION__
+const appVersion = packageJson.version
 const {
   exportBackup,
   importBackup,

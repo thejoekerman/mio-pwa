@@ -50,21 +50,31 @@ async function performRequest<T>(
   init?: RequestInit,
 ) {
   const config = requireSyncConfig(apiBaseUrl, syncToken)
-  const response = await fetch(`${config.apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${config.syncToken}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, 18000) // 18 seconds
 
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response))
+  try {
+    const response = await fetch(`${config.apiBaseUrl}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${config.syncToken}`,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response))
+    }
+
+    return (await response.json()) as T
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  return (await response.json()) as T
 }
 
 export async function testSyncConnection(

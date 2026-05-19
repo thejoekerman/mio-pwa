@@ -11,7 +11,7 @@ import { isDemoMode } from '../lib/appMode'
 
 const SETTINGS_STORAGE_KEY = isDemoMode ? 'miolog-demo-settings' : 'miolog-settings'
 
-interface AppSettingsState {
+export interface AppSettingsState {
   language: AppLanguage
   theme: AppTheme
   syncApiBaseUrl: string
