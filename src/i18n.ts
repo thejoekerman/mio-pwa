@@ -26,6 +26,8 @@ const messages = {
     app: {
       title: 'MioLog',
       demoBadge: 'Demo',
+      updateAvailable: 'A new version is available.',
+      updateReload: 'Reload',
     },
     status: {
       backlog: 'Backlog',
@@ -463,6 +465,24 @@ const messages = {
       'Co-op': 'Co-op',
       Indie: 'Indie',
     },
+    wrapped: {
+      kicker: 'Year in review',
+      title: '{year} in games',
+      backToHome: 'Home',
+      noFinishedGames: 'No finished games in {year}.',
+      gamesFinished: 'Games finished',
+      totalPlayTime: 'Total play time',
+      avgRating: 'Avg. rating',
+      topPlatform: 'Top platform',
+      topGenres: 'Top genres',
+      firstFinished: 'First finished',
+      lastFinished: 'Last finished',
+      homePanelKicker: 'Year in review',
+      homePanelTitle: 'Gaming Wrapped',
+      viewWrapped: 'View {year}',
+      homePanelPreview: '{count} games · ~{hours} h',
+      homePanelPreviewNoHours: '{count} games',
+    },
   },
   de: {
     nav: {
@@ -477,6 +497,8 @@ const messages = {
     app: {
       title: 'MioLog',
       demoBadge: 'Demo',
+      updateAvailable: 'Eine neue Version ist verfügbar.',
+      updateReload: 'Neu laden',
     },
     status: {
       backlog: 'Backlog',
@@ -913,6 +935,24 @@ const messages = {
       Stealth: 'Stealth',
       'Co-op': 'Koop',
       Indie: 'Indie',
+    },
+    wrapped: {
+      kicker: 'Jahresrückblick',
+      title: '{year} in Spielen',
+      backToHome: 'Start',
+      noFinishedGames: 'Keine beendeten Spiele in {year}.',
+      gamesFinished: 'Beendete Spiele',
+      totalPlayTime: 'Gesamte Spielzeit',
+      avgRating: 'Ø Wertung',
+      topPlatform: 'Top-Plattform',
+      topGenres: 'Top-Genres',
+      firstFinished: 'Zuerst beendet',
+      lastFinished: 'Zuletzt beendet',
+      homePanelKicker: 'Jahresrückblick',
+      homePanelTitle: 'Gaming Wrapped',
+      viewWrapped: '{year} ansehen',
+      homePanelPreview: '{count} Spiele · ~{hours} h',
+      homePanelPreviewNoHours: '{count} Spiele',
     },
   },
 } as const

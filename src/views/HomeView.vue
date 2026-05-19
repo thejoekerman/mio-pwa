@@ -18,6 +18,7 @@ const {
   duePausedGames,
   earnedTrophyViews,
   exportBackup,
+  finishedYearOptions,
   formatDate,
   generatePlayNextRecommendation,
   games,
@@ -367,6 +368,33 @@ watch(
     }
   },
 )
+
+const wrappedYear = ref(finishedYearOptions.value[0] ?? '')
+
+watch(finishedYearOptions, (options) => {
+  if (options.length > 0 && !options.includes(wrappedYear.value)) {
+    wrappedYear.value = options[0]
+  }
+})
+
+const wrappedYearGames = computed(() =>
+  games.value.filter(
+    (g) =>
+      g.status === 'finished' &&
+      g.deletedAt === null &&
+      typeof g.finishedAt === 'string' &&
+      g.finishedAt.startsWith(wrappedYear.value),
+  ),
+)
+
+const wrappedPreviewText = computed(() => {
+  const count = wrappedYearGames.value.length
+  if (count === 0) return null
+  const hours = wrappedYearGames.value.reduce((sum, g) => sum + (g.playTimeHours ?? 0), 0)
+  return hours > 0
+    ? t('wrapped.homePanelPreview', { count, hours })
+    : t('wrapped.homePanelPreviewNoHours', { count })
+})
 
 onBeforeUnmount(() => {
   desktopHomeMediaQuery?.removeEventListener('change', syncDesktopHomeLayout)
@@ -800,6 +828,48 @@ onBeforeUnmount(() => {
                 </svg>
               </RouterLink>
             </div>
+          </div>
+        </section>
+
+        <section
+          v-if="finishedYearOptions.length > 0"
+          class="panel home-side-panel home-wrapped-panel"
+        >
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker">{{ t('wrapped.homePanelKicker') }}</p>
+              <h2>{{ t('wrapped.homePanelTitle') }}</h2>
+            </div>
+          </div>
+
+          <div class="wrapped-year-picker">
+            <button
+              v-for="year in finishedYearOptions"
+              :key="year"
+              type="button"
+              class="wrapped-year-chip"
+              :class="{ active: year === wrappedYear }"
+              @click="wrappedYear = year"
+            >
+              {{ year }}
+            </button>
+          </div>
+
+          <p v-if="wrappedPreviewText" class="soft-meta">{{ wrappedPreviewText }}</p>
+
+          <div class="home-current-actions">
+            <RouterLink
+              class="icon-button large"
+              :aria-label="t('wrapped.viewWrapped', { year: wrappedYear })"
+              :title="t('wrapped.viewWrapped', { year: wrappedYear })"
+              :to="{ name: 'wrapped', query: { year: wrappedYear } }"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              </svg>
+            </RouterLink>
           </div>
         </section>
       </section>

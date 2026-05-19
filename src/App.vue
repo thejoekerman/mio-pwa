@@ -20,6 +20,7 @@ const { settings } = useSettings()
 const { t } = useI18n()
 const lastMainRoute = ref<{ name: string; params?: Record<string, string> } | null>(null)
 const topbarCompact = ref(false)
+const updateAvailable = ref(false)
 let feedbackTimer: number | null = null
 
 const navItems = computed(() => [
@@ -59,11 +60,24 @@ function handleScrollThrottled() {
 onMounted(() => {
   updateTopbarDensity()
   window.addEventListener('scroll', handleScrollThrottled, { passive: true })
+
+  if ('serviceWorker' in navigator) {
+    const hadController = Boolean(navigator.serviceWorker.controller)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) {
+        updateAvailable.value = true
+      }
+    })
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', handleScrollThrottled)
 })
+
+function applyUpdate() {
+  window.location.reload()
+}
 
 watch(
   () => route.name,
@@ -159,6 +173,13 @@ async function toggleJournal() {
           </VBtn>
         </div>
       </VToolbar>
+
+      <div v-if="updateAvailable" class="app-update-banner" role="status">
+        <span>{{ t('app.updateAvailable') }}</span>
+        <button type="button" class="app-update-reload" @click="applyUpdate">
+          {{ t('app.updateReload') }}
+        </button>
+      </div>
 
       <div v-if="feedback" class="app-toast-wrap" aria-live="polite">
         <p class="app-toast" :class="feedback.tone">
