@@ -23,6 +23,7 @@ const palettes = [
 ]
 const failedCoverUrl = ref<string | null>(null)
 const coverFit = ref<'fill' | 'contain' | null>(null)
+const coverLoaded = ref(false)
 const visibleCoverUrl = computed(() =>
   props.coverUrl && props.coverUrl !== failedCoverUrl.value ? props.coverUrl : null,
 )
@@ -36,6 +37,7 @@ watch(
   () => {
     failedCoverUrl.value = null
     coverFit.value = null
+    coverLoaded.value = false
   },
 )
 
@@ -78,6 +80,7 @@ function handleCoverLoad(event: Event) {
   const frameRatio = 3 / 4
 
   coverFit.value = Math.abs(ratio - frameRatio) <= 0.08 ? 'fill' : 'contain'
+  coverLoaded.value = true
 }
 </script>
 
@@ -91,13 +94,14 @@ function handleCoverLoad(event: Event) {
       },
     ]"
     :style="coverStyle"
-    role="img"
-    :aria-label="title"
+    :role="visibleCoverUrl ? undefined : 'img'"
+    :aria-label="visibleCoverUrl ? undefined : title"
   >
     <img
       v-if="visibleCoverUrl"
       :src="visibleCoverUrl"
       :alt="title"
+      :class="{ loaded: coverLoaded }"
       loading="lazy"
       @load="handleCoverLoad"
       @error="failedCoverUrl = visibleCoverUrl"

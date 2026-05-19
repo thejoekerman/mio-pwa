@@ -2,6 +2,16 @@ import { computed } from 'vue'
 import { useSettings } from './composables/useSettings'
 import type { AppLanguage, GameOwnershipFilter, GameOwnershipType, GameSortOption, GameStatus } from './types'
 
+/**
+ * Extract all nested keys from an object as dot-notation strings.
+ * Example: { nav: { home: 'Home' } } → 'nav.home'
+ */
+type NestedKeyOf<T> = {
+  [K in keyof T & string]: T[K] extends Record<string, unknown>
+    ? `${K}.${NestedKeyOf<T[K]>}`
+    : K
+}[keyof T & string]
+
 const messages = {
   en: {
     nav: {
@@ -215,7 +225,7 @@ const messages = {
       wikidataFailed: 'Could not load title suggestions right now.',
       status: 'Status',
       rating: 'Rating',
-      ratingHint: 'Only for finished or abandoned runs.',
+      ratingHint: 'Only for finished or abandoned runs. Rating must be between 1-10.',
       ratingPlaceholder: '1-10',
       playTime: 'Play time',
       playTimePlaceholder: '70 or 4.5',
@@ -666,7 +676,7 @@ const messages = {
       wikidataFailed: 'Titelvorschläge konnten gerade nicht geladen werden.',
       status: 'Status',
       rating: 'Wertung',
-      ratingHint: 'Nur für beendete oder abgebrochene Durchgänge.',
+      ratingHint: 'Nur für beendete oder abgebrochene Durchgänge. Wertung muss zwischen 1-10 liegen.',
       ratingPlaceholder: '1-10',
       playTime: 'Spielzeit',
       playTimePlaceholder: '70 oder 4,5',
@@ -907,6 +917,13 @@ const messages = {
   },
 } as const
 
+/**
+ * Type-safe message key union. Ensures all keys are valid at compile time.
+ * Example valid keys: 'nav.home', 'app.title', 'status.playing', etc.
+ * Exported so other files can use it for type-safe translations.
+ */
+export type MessageKey = NestedKeyOf<typeof messages.en>
+
 function resolveKey(language: AppLanguage, key: string): string {
   const path = key.split('.')
   let cursor: unknown = messages[language]
@@ -941,7 +958,7 @@ function interpolate(template: string, params?: Record<string, string | number>)
 
 export function translate(
   language: AppLanguage,
-  key: string,
+  key: MessageKey,
   params?: Record<string, string | number>,
 ) {
   return interpolate(resolveKey(language, key), params)
@@ -971,13 +988,13 @@ export function getOwnershipLabel(
 }
 
 export function getTagLabel(language: AppLanguage, tag: string) {
-  return translate(language, `tag.${tag}`)
+  return translate(language, `tag.${tag}` as MessageKey)
 }
 
 export function useI18n() {
   const { setLanguage, settings } = useSettings()
 
-  function t(key: string, params?: Record<string, string | number>) {
+  function t(key: MessageKey, params?: Record<string, string | number>) {
     return translate(settings.language, key, params)
   }
 

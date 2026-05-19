@@ -29,15 +29,6 @@ export const GAME_OWNERSHIP_FILTERS = ['all', 'digital', 'physical'] as const
 
 export type GameOwnershipFilter = (typeof GAME_OWNERSHIP_FILTERS)[number]
 
-export const GAME_STATUS_LABELS: Record<GameStatus, string> = {
-  backlog: 'Backlog',
-  playing: 'Playing',
-  ongoing: 'Ongoing',
-  finished: 'Finished',
-  paused: 'Paused',
-  abandoned: 'Abandoned',
-}
-
 export const GAME_SORT_OPTIONS = [
   'created-desc',
   'created-asc',
@@ -53,16 +44,6 @@ export type GameSortOption = (typeof GAME_SORT_OPTIONS)[number]
 export const GAME_PRIORITIES = ['high-interest', 'low-pressure', 'save-for-later'] as const
 
 export type GamePriority = (typeof GAME_PRIORITIES)[number]
-
-export const GAME_SORT_LABELS: Record<GameSortOption, string> = {
-  'created-desc': 'Added newest',
-  'created-asc': 'Added oldest',
-  'title-asc': 'Title A-Z',
-  'developer-asc': 'Developer A-Z',
-  'publisher-asc': 'Publisher A-Z',
-  'rating-desc': 'Rating high-low',
-  'rating-asc': 'Rating low-high',
-}
 
 export const PLATFORM_OPTIONS = [
   'PS5',

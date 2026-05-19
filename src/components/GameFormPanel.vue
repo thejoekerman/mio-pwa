@@ -9,6 +9,12 @@ import {
   SUGGESTED_TAGS,
   type GameFormState,
 } from '../types'
+import {
+  wikidataEntityIdsFromClaims,
+  wikidataEntityLabelMap,
+  wikidataReleaseYearFromClaims,
+  tagsFromGenreLabel,
+} from '../lib/wikidataUtils'
 const { statusLabel, t, tagLabel } = useI18n()
 
 interface WikidataSuggestion {
@@ -266,16 +272,27 @@ async function useWikidataSuggestion(suggestion: WikidataSuggestion) {
   wikidataSuggestions.value = []
   wikidataSearchFailed.value = false
 
-  const tags = await getWikidataTags(suggestion.id)
+  const { tags, developer, publisher, releaseYear } = await getWikidataMetadata(suggestion.id)
 
   if (tags.length > 0) {
     setTags([...selectedTags.value, ...tags])
   }
+  if (developer && !props.form.developer.trim()) {
+    props.form.developer = developer
+  }
+  if (publisher && !props.form.publisher.trim()) {
+    props.form.publisher = publisher
+  }
+  if (releaseYear !== null && !props.form.releaseYear.trim()) {
+    props.form.releaseYear = String(releaseYear)
+  }
 }
 
-async function getWikidataTags(itemId: string) {
+async function getWikidataMetadata(itemId: string) {
+  const empty = { tags: [] as string[], developer: null as string | null, publisher: null as string | null, releaseYear: null as number | null }
+
   if (isOffline()) {
-    return []
+    return empty
   }
 
   try {
@@ -284,18 +301,23 @@ async function getWikidataTags(itemId: string) {
       format: 'json',
       origin: '*',
       entity: itemId,
-      property: 'P136',
     })
     const claimsResponse = await fetch(`https://www.wikidata.org/w/api.php?${claimsParams.toString()}`)
 
     if (!claimsResponse.ok) {
-      return []
+      return empty
     }
 
-    const genreIds = wikidataGenreIdsFromClaims(await claimsResponse.json()).slice(0, 6)
+    const claimsData = await claimsResponse.json()
+    const genreIds = wikidataEntityIdsFromClaims(claimsData, 'P136').slice(0, 6)
+    const developerIds = wikidataEntityIdsFromClaims(claimsData, 'P178').slice(0, 1)
+    const publisherIds = wikidataEntityIdsFromClaims(claimsData, 'P123').slice(0, 1)
+    const releaseYear = wikidataReleaseYearFromClaims(claimsData)
 
-    if (genreIds.length === 0) {
-      return []
+    const entityIds = [...genreIds, ...developerIds, ...publisherIds]
+
+    if (entityIds.length === 0) {
+      return { ...empty, releaseYear }
     }
 
     const labelParams = new URLSearchParams({
@@ -305,151 +327,29 @@ async function getWikidataTags(itemId: string) {
       languagefallback: '1',
       origin: '*',
       props: 'labels',
-      ids: genreIds.join('|'),
+      ids: entityIds.join('|'),
     })
     const labelResponse = await fetch(`https://www.wikidata.org/w/api.php?${labelParams.toString()}`)
 
     if (!labelResponse.ok) {
-      return []
+      return { ...empty, releaseYear }
     }
 
-    return [
-      ...new Set(wikidataLabelsFromEntities(await labelResponse.json()).flatMap(tagsFromGenreLabel)),
+    const labelMap = wikidataEntityLabelMap(await labelResponse.json())
+    const tags = [
+      ...new Set(genreIds.map((id) => labelMap[id]).filter((l): l is string => Boolean(l)).flatMap(tagsFromGenreLabel)),
     ].slice(0, 3)
+    const developer = developerIds.length > 0 ? (labelMap[developerIds[0]] ?? null) : null
+    const publisher = publisherIds.length > 0 ? (labelMap[publisherIds[0]] ?? null) : null
+
+    return { tags, developer, publisher, releaseYear }
   } catch {
-    return []
+    return empty
   }
 }
 
 function isOffline() {
   return typeof navigator !== 'undefined' && navigator.onLine === false
-}
-
-function wikidataGenreIdsFromClaims(payload: unknown) {
-  if (!payload || typeof payload !== 'object') {
-    return []
-  }
-
-  const claims = (payload as { claims?: { P136?: unknown[] } }).claims?.P136
-
-  if (!Array.isArray(claims)) {
-    return []
-  }
-
-  return claims
-    .map((claim) => {
-      const value = (claim as {
-        mainsnak?: { datavalue?: { value?: { id?: unknown } } }
-      }).mainsnak?.datavalue?.value
-
-      return typeof value?.id === 'string' ? value.id : ''
-    })
-    .filter(Boolean)
-}
-
-function wikidataLabelsFromEntities(payload: unknown) {
-  if (!payload || typeof payload !== 'object') {
-    return []
-  }
-
-  const entities = (payload as { entities?: Record<string, unknown> }).entities
-
-  if (!entities) {
-    return []
-  }
-
-  return Object.values(entities)
-    .map((entity) => {
-      const label = (entity as { labels?: { en?: { value?: unknown } } }).labels?.en?.value
-
-      return typeof label === 'string' ? label : ''
-    })
-    .filter(Boolean)
-}
-
-function tagsFromGenreLabel(label: string) {
-  const normalizedLabel = label.toLowerCase()
-  const tags: string[] = []
-
-  if (normalizedLabel.includes('japanese role-playing')) {
-    tags.push('JRPG')
-  } else if (normalizedLabel.includes('role-playing')) {
-    tags.push('RPG')
-  }
-
-  if (normalizedLabel.includes('survival horror') || normalizedLabel.includes('horror')) {
-    tags.push('Horror')
-  }
-
-  if (normalizedLabel.includes('action')) {
-    tags.push('Action')
-  }
-
-  if (normalizedLabel.includes('adventure')) {
-    tags.push('Adventure')
-  }
-
-  if (normalizedLabel.includes('strategy')) {
-    tags.push('Strategy')
-  }
-
-  if (normalizedLabel.includes('tactical') || normalizedLabel.includes('tactics')) {
-    tags.push('Tactical')
-  }
-
-  if (normalizedLabel.includes('roguelike')) {
-    tags.push('Roguelike')
-  }
-
-  if (normalizedLabel.includes('metroidvania')) {
-    tags.push('Metroidvania')
-  }
-
-  if (normalizedLabel.includes('puzzle')) {
-    tags.push('Puzzle')
-  }
-
-  if (normalizedLabel.includes('simulation') || normalizedLabel.includes('simulator')) {
-    tags.push('Simulation')
-  }
-
-  if (normalizedLabel.includes('fighting')) {
-    tags.push('Fighting')
-  }
-
-  if (normalizedLabel.includes('platform')) {
-    tags.push('Platformer')
-  }
-
-  if (normalizedLabel.includes('shooter') || normalizedLabel.includes('shoot')) {
-    tags.push('Shooter')
-  }
-
-  if (normalizedLabel.includes('racing')) {
-    tags.push('Racing')
-  }
-
-  if (normalizedLabel.includes('sports')) {
-    tags.push('Sports')
-  }
-
-  if (normalizedLabel.includes('visual novel')) {
-    tags.push('Visual Novel')
-  }
-
-  if (normalizedLabel.includes('stealth')) {
-    tags.push('Stealth')
-  }
-
-  if (normalizedLabel.includes('soulslike')) {
-    tags.push('Soulslike')
-  }
-
-  if (normalizedLabel.includes('indie')) {
-    tags.push('Indie')
-  }
-
-  return tags
 }
 
 function addDaysDate(days: number) {

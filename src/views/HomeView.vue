@@ -38,7 +38,6 @@ const { ownershipLabel, statusLabel, t } = useI18n()
 const router = useRouter()
 
 const activeGameId = ref<string | null>(null)
-const activeSlideIndex = ref(0)
 const emblaViewportRef = ref<HTMLElement | null>(null)
 const emblaApi = ref<EmblaCarouselType | null>(null)
 const isDesktopHomeLayout = ref(false)
@@ -121,6 +120,14 @@ const shouldShowChoicePanel = computed(
     canUseLocalShelfDraw.value,
 )
 
+const activeSlideIndex = computed(() => {
+  if (activeHomeGames.value.length === 0 || !activeGameId.value) {
+    return 0
+  }
+
+  return activeHomeGames.value.findIndex((game) => game.id === activeGameId.value)
+})
+
 const featuredGame = computed(() => {
   if (activeHomeGames.value.length > 0) {
     return (
@@ -160,40 +167,46 @@ const featuredGameMetadata = computed(() => {
   return metadata
 })
 
-function syncEmblaToActiveGame() {
-  if (!emblaApi.value || activeHomeGames.value.length <= 1 || !activeGameId.value) {
-    return
-  }
-
-  const nextIndex = activeHomeGames.value.findIndex((game) => game.id === activeGameId.value)
-
-  if (nextIndex < 0) {
-    return
-  }
-
-  activeSlideIndex.value = nextIndex
-
-  if (emblaApi.value.selectedScrollSnap() !== nextIndex) {
-    emblaApi.value.scrollTo(nextIndex, true)
-  }
-}
-
+/**
+ * Initialize activeGameId when activeHomeGames becomes available.
+ * One-time initialization; activeGameId is then driven by user interaction and activeSlideIndex watcher.
+ */
 watch(
-  activeHomeGames,
-  (entries) => {
-    if (entries.length === 0) {
+  () => activeHomeGames.value.length,
+  (count) => {
+    if (count === 0) {
       activeGameId.value = null
-      activeSlideIndex.value = 0
       return
     }
 
-    if (!entries.some((game) => game.id === activeGameId.value)) {
-      activeGameId.value = entries[0].id
+    if (!activeGameId.value || !activeHomeGames.value.some((g) => g.id === activeGameId.value)) {
+      activeGameId.value = activeHomeGames.value[0].id
     }
   },
   { immediate: true },
 )
 
+/**
+ * One-way embla driver: when activeSlideIndex (computed from activeGameId) changes,
+ * scroll embla to match. This is the single source of truth for keeping embla in sync.
+ */
+watch(
+  activeSlideIndex,
+  (nextIndex) => {
+    if (!emblaApi.value || activeHomeGames.value.length <= 1 || nextIndex < 0) {
+      return
+    }
+
+    if (emblaApi.value.selectedScrollSnap() !== nextIndex) {
+      emblaApi.value.scrollTo(nextIndex, true)
+    }
+  },
+)
+
+/**
+ * Set up embla event listeners. When embla's selected snap changes (user drag/click),
+ * update activeGameId to match the new slide.
+ */
 watch(
   emblaApi,
   (api) => {
@@ -201,50 +214,34 @@ watch(
       return
     }
 
-    const syncSelection = () => {
-      activeSlideIndex.value = api.selectedScrollSnap()
-      const game = activeHomeGames.value[activeSlideIndex.value]
+    const syncActiveGameFromEmbla = () => {
+      const index = api.selectedScrollSnap()
+      const game = activeHomeGames.value[index]
 
       if (game) {
         activeGameId.value = game.id
       }
     }
 
-    api.on('select', syncSelection)
-    api.on('reInit', syncEmblaToActiveGame)
-    syncEmblaToActiveGame()
-    syncSelection()
+    // Listen for embla selection changes (user scrolling)
+    api.on('select', syncActiveGameFromEmbla)
+    // After reInit, restore embla to the current activeGameId position
+    api.on('reInit', () => {
+      const index = activeSlideIndex.value
+      if (index >= 0 && api.selectedScrollSnap() !== index) {
+        api.scrollTo(index, true)
+      }
+    })
+
+    // Initial sync
+    syncActiveGameFromEmbla()
   },
   { immediate: true },
 )
 
-watch(
-  activeGameId,
-  (gameId) => {
-    if (!gameId || !emblaApi.value || activeHomeGames.value.length <= 1) {
-      return
-    }
-
-    const nextIndex = activeHomeGames.value.findIndex((game) => game.id === gameId)
-
-    if (nextIndex >= 0 && nextIndex !== emblaApi.value.selectedScrollSnap()) {
-      emblaApi.value.scrollTo(nextIndex)
-    }
-  },
-)
-
-watch(
-  () => activeHomeGames.value.map((game) => `${game.id}:${game.updatedAt}`).join('|'),
-  async () => {
-    if (activeHomeGames.value.length <= 1 || !emblaApi.value) {
-      return
-    }
-
-    await nextTick()
-    syncEmblaToActiveGame()
-  },
-)
-
+/**
+ * When featured game changes, load its details in the sidebar.
+ */
 watch(
   featuredGame,
   async (game) => {
@@ -350,7 +347,6 @@ watch(
   async (count) => {
     if (count <= 1) {
       destroyEmbla()
-      activeSlideIndex.value = 0
       return
     }
 
@@ -507,9 +503,18 @@ onBeforeUnmount(() => {
               <p class="section-kicker">{{ t('home.currentGameKicker') }}</p>
               <h2>{{ featuredGame.title }}</h2>
 
-              <div class="card-metadata-list home-current-metadata">
-                <span v-for="item in featuredGameMetadata" :key="item">{{ item }}</span>
-                <span v-for="tag in featuredGame.tags" :key="tag">{{ tag }}</span>
+              <div class="card-metadata-list detail-hero-metadata home-current-metadata">
+                <template
+                  v-for="(item, index) in [...featuredGameMetadata, ...featuredGame.tags]"
+                  :key="`${item}-${index}`"
+                >
+                  <span>{{ item }}</span>
+                  <span
+                    v-if="index < featuredGameMetadata.length + featuredGame.tags.length - 1"
+                    class="metadata-separator"
+                    aria-hidden="true"
+                  >&nbsp;·&nbsp;</span>
+                </template>
               </div>
             </div>
           </div>

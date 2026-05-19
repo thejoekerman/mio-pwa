@@ -1,10 +1,11 @@
+import type { MessageKey } from '../i18n'
 import type { EarnedTrophy, Game, LogEntry } from '../types'
 
 export interface TrophyDefinition {
   id: string
   iconKey: string
-  titleKey: string
-  descriptionKey: string
+  titleKey: MessageKey
+  descriptionKey: MessageKey
 }
 
 export interface TrophyView extends TrophyDefinition {
@@ -139,7 +140,7 @@ export function createTrophyViews(earnedTrophies: EarnedTrophy[]): TrophyView[] 
   })
 }
 
-function buildTrophyFacts(games: Game[], logs: LogEntry[]): TrophyFacts {
+export function buildTrophyFacts(games: Game[], logs: LogEntry[]): TrophyFacts {
   const visibleGames = games.filter((game) => game.deletedAt === null)
   const visibleLogs = logs.filter((log) => log.deletedAt === null)
   const finishedGames = visibleGames.filter((game) => game.status === 'finished')

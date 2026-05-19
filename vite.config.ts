@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
-import packageJson from './package.json'
 
 function demoHeadPlugin() {
   return {
@@ -13,7 +12,7 @@ function demoHeadPlugin() {
 
       return html
         .replace(/\n\s*<link rel="manifest" href="\/manifest\.webmanifest" \/>/, '')
-        .replace(/\n\s*<meta name="apple-mobile-web-app-capable" content="yes" \/>/, '')
+        .replace(/\n\s*<meta name="mobile-web-app-capable" content="yes" \/>/, '')
         .replace(/\n\s*<meta name="apple-mobile-web-app-title" content="MioLog" \/>/, '')
         .replace(
           'content="MioLog is a local-first game backlog and play-log PWA for tracking what you play, pause, finish, and remember."',
@@ -41,8 +40,5 @@ function demoHeadPlugin() {
 // https://vite.dev/config/
 export default defineConfig({
   base: process.env.VITE_APP_TARGET === 'desktop' ? './' : '/',
-  define: {
-    __APP_VERSION__: JSON.stringify(packageJson.version),
-  },
   plugins: [demoHeadPlugin(), vue(), vuetify({ autoImport: true })],
 })
