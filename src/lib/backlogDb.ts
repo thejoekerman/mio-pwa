@@ -26,7 +26,7 @@ class BacklogDatabase extends Dexie {
   earnedTrophies!: EntityTable<EarnedTrophy, 'id'>
 
   constructor() {
-    super(isDemoMode ? 'miolog-demo-backlog' : 'miolog-backlog')
+    super(isDemoMode ? 'miolog-demo-backlog' : 'games-backlog')
 
     // Keep schema explicit so future migrations stay easy to reason about.
     this.version(1).stores({

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import packageJson from '../../package.json'
 import { useBacklog } from '../composables/useBacklog'
 import { useSettings } from '../composables/useSettings'
@@ -7,6 +7,17 @@ import { useI18n } from '../i18n'
 import { APP_LANGUAGES, APP_THEMES, type BackupData, type BackupImportMode } from '../types'
 import { isDemoMode } from '../lib/appMode'
 import { downloadBackupPayload } from '../lib/backupDownload'
+import { requestEnrich } from '../lib/syncApi'
+import {
+  detectWebGpuSupport,
+  getModelsForLanguage,
+  hasLocalReviewModelForLanguage,
+  isStorageQuotaError,
+  isWebGpuAvailable,
+  isWebGpuError,
+  LOCAL_REVIEW_MODELS,
+  resolveLocalReviewModel,
+} from '../lib/localReviewModels'
 
 const appVersion = packageJson.version
 const {
@@ -20,8 +31,9 @@ const {
   syncNow,
   testSyncConnection,
 } = useBacklog()
-const { settings, setLanguage, setTheme } = useSettings()
+const { settings, setAiLocalReviewModel, setLanguage, setTheme } = useSettings()
 const { t } = useI18n()
+const webGpuAvailable = ref(isWebGpuAvailable())
 const fileInput = ref<HTMLInputElement | null>(null)
 const importMode = ref<BackupImportMode>('merge')
 const backupNotice = ref('')
@@ -31,6 +43,9 @@ const pendingImportInput = ref<HTMLInputElement | null>(null)
 const replaceImportDialogOpen = ref(false)
 const syncNotice = ref('')
 const syncNoticeTone = ref<'success' | 'error'>('success')
+const isEnriching = ref(false)
+const enrichNotice = ref('')
+const enrichNoticeTone = ref<'success' | 'error'>('success')
 const languageOptions = computed(() =>
   APP_LANGUAGES.map((language) => ({
     title: t(`settings.language.${language}`),
@@ -47,6 +62,154 @@ const importModeOptions = computed(() => [
   { title: t('settings.mergeMode'), value: 'merge' },
   { title: t('settings.replaceMode'), value: 'replace' },
 ])
+const localModelCacheStatus = ref<Record<string, boolean>>({})
+// Only offer models that can actually write in the current app language — the
+// small models output garbage in German, so they're filtered out when in DE.
+const localModelOptions = computed(() =>
+  getModelsForLanguage(settings.language).map((model) => {
+    const base = `${model.name} · ${t(`settings.localAiTier.${model.tier}`)} · ${model.sizeLabel}`
+    return {
+      title: localModelCacheStatus.value[model.id] ? `✓ ${base}` : base,
+      value: model.id,
+    }
+  }),
+)
+const hasModelForLanguage = computed(() => hasLocalReviewModelForLanguage(settings.language))
+const effectiveModelId = computed(() =>
+  resolveLocalReviewModel(settings.aiLocalReviewModel, settings.language),
+)
+const selectedLocalModel = computed(
+  () => LOCAL_REVIEW_MODELS.find((model) => model.id === effectiveModelId.value) ?? null,
+)
+
+type LocalModelStatus = 'checking' | 'not-cached' | 'downloading' | 'ready' | 'error'
+const localModelStatus = ref<LocalModelStatus>('checking')
+const localModelProgress = ref(0)
+const localModelPhase = ref<'downloading' | 'preparing'>('downloading')
+const localModelError = ref('')
+const localModelPercent = computed(() => (localModelProgress.value * 100).toFixed(1))
+const confirmDownloadOpen = ref(false)
+
+function updateLocalModel(value: string | null) {
+  if (value) {
+    setAiLocalReviewModel(value)
+  }
+}
+
+// Reflect the selected model's status from the cache map, without re-checking —
+// used when the user just switches the picker between known models.
+function syncSelectedStatusFromMap() {
+  if (localModelStatus.value === 'downloading') {
+    return
+  }
+
+  const map = localModelCacheStatus.value
+  if (effectiveModelId.value in map) {
+    localModelStatus.value = map[effectiveModelId.value] ? 'ready' : 'not-cached'
+  }
+}
+
+async function refreshLocalModelStatus() {
+  if (!webGpuAvailable.value || !settings.aiLocalReviewDraftEnabled) {
+    return
+  }
+
+  if (localModelStatus.value !== 'downloading') {
+    localModelStatus.value = 'checking'
+  }
+
+  try {
+    const { isLocalModelCached } = await import('../lib/localReviewDraft')
+    // Check only the current language's models, and apply each result as it
+    // resolves — checking an un-downloaded model makes WebLLM fetch its manifest,
+    // which can be slow, and must not block the others or stick on "checking".
+    await Promise.all(
+      getModelsForLanguage(settings.language).map(async (model) => {
+        const cached = await isLocalModelCached(model.id)
+        localModelCacheStatus.value = { ...localModelCacheStatus.value, [model.id]: cached }
+        syncSelectedStatusFromMap()
+      }),
+    )
+  } catch {
+    localModelStatus.value = 'not-cached'
+  }
+}
+
+function requestLocalModelDownload() {
+  confirmDownloadOpen.value = true
+}
+
+async function confirmLocalModelDownload() {
+  confirmDownloadOpen.value = false
+  const modelId = effectiveModelId.value
+  localModelStatus.value = 'downloading'
+  localModelProgress.value = 0
+  localModelPhase.value = 'downloading'
+  localModelError.value = ''
+
+  try {
+    const { prepareLocalModel } = await import('../lib/localReviewDraft')
+    await prepareLocalModel(modelId, (progress, text) => {
+      localModelProgress.value = progress
+      // WebLLM runs two passes (fetch shards, then GPU load); distinguish them so
+      // the second one doesn't look like a re-download.
+      localModelPhase.value = /fetch|download/i.test(text) ? 'downloading' : 'preparing'
+    })
+    localModelCacheStatus.value = { ...localModelCacheStatus.value, [modelId]: true }
+    localModelStatus.value = 'ready'
+  } catch (error) {
+    console.error(error)
+    localModelError.value = isStorageQuotaError(error)
+      ? t('feedback.localModelStorageFull')
+      : isWebGpuError(error)
+        ? t('settings.localAiUnsupported')
+        : t('settings.localAiDownloadFailed')
+    localModelStatus.value = 'error'
+  }
+}
+
+async function removeLocalModelDownload() {
+  const modelId = effectiveModelId.value
+
+  try {
+    const { removeLocalModel } = await import('../lib/localReviewDraft')
+    await removeLocalModel(modelId)
+  } catch (error) {
+    console.error(error)
+  } finally {
+    localModelCacheStatus.value = { ...localModelCacheStatus.value, [modelId]: false }
+    localModelStatus.value = 'not-cached'
+  }
+}
+
+// Switching the picker (or app language) changes the effective model. If we've
+// already checked it, reflect status instantly; otherwise (e.g. first switch to a
+// new language's model) run a scoped check rather than leaving it unknown.
+watch(effectiveModelId, (id) => {
+  if (id in localModelCacheStatus.value) {
+    syncSelectedStatusFromMap()
+  } else {
+    void refreshLocalModelStatus()
+  }
+})
+
+// Turning the feature on (re)scans which models are already downloaded.
+watch(
+  () => settings.aiLocalReviewDraftEnabled,
+  (enabled) => {
+    if (enabled) {
+      void refreshLocalModelStatus()
+    }
+  },
+)
+
+onMounted(async () => {
+  webGpuAvailable.value = await detectWebGpuSupport()
+
+  if (settings.aiLocalReviewDraftEnabled) {
+    void refreshLocalModelStatus()
+  }
+})
 const lastSyncedLabel = computed(() => {
   if (!settings.lastSyncedAt) {
     return null
@@ -177,6 +340,24 @@ async function handleTestConnection() {
   }
 }
 
+async function handleEnrich() {
+  isEnriching.value = true
+  enrichNotice.value = ''
+
+  try {
+    await requestEnrich(settings.syncApiBaseUrl, settings.syncToken)
+    enrichNoticeTone.value = 'success'
+    enrichNotice.value = t('settings.enrichSuccessNotice')
+    await syncNow({ silentSuccess: true })
+  } catch (error) {
+    enrichNoticeTone.value = 'error'
+    enrichNotice.value =
+      error instanceof Error ? error.message : t('settings.enrichFailed')
+  } finally {
+    isEnriching.value = false
+  }
+}
+
 async function handleSyncNow() {
   try {
     const result = await syncNow()
@@ -195,13 +376,6 @@ async function handleSyncNow() {
 
 <template>
   <div class="view-stack">
-    <section class="view-intro">
-      <div>
-        <p class="section-kicker">{{ t('settings.kicker') }}</p>
-        <h1 class="view-title">{{ t('settings.title') }}</h1>
-      </div>
-    </section>
-
     <section v-if="isDemoMode" class="panel settings-section">
       <div class="section-heading">
         <div>
@@ -345,6 +519,146 @@ async function handleSyncNow() {
     <section v-if="!isDemoMode" class="panel settings-section">
       <div class="section-heading">
         <div>
+          <p class="section-kicker">{{ t('settings.localAiKicker') }}</p>
+          <h2>{{ t('settings.localAiTitle') }}</h2>
+          <p class="section-helper">{{ t('settings.localAiHelper') }}</p>
+        </div>
+      </div>
+
+      <div v-if="webGpuAvailable" class="settings-grid">
+        <VSwitch
+          v-model="settings.aiLocalReviewDraftEnabled"
+          class="settings-control settings-switch"
+          color="primary"
+          hide-details
+          :label="t('settings.localAiEnableLabel')"
+        />
+
+        <template v-if="settings.aiLocalReviewDraftEnabled">
+          <template v-if="hasModelForLanguage">
+          <VSelect
+            class="settings-control"
+            :label="t('settings.localAiModelLabel')"
+            :items="localModelOptions"
+            :model-value="effectiveModelId"
+            :disabled="localModelStatus === 'downloading'"
+            @update:model-value="updateLocalModel"
+          />
+          <p class="settings-meta">{{ t('settings.localAiModelMeta') }}</p>
+
+          <div v-if="localModelStatus === 'checking'" class="settings-meta local-ai-status">
+            <VProgressCircular indeterminate size="18" width="2" color="primary" />
+            <span>{{ t('settings.localAiChecking') }}</span>
+          </div>
+
+          <template v-else-if="localModelStatus === 'downloading'">
+            <VProgressLinear
+              :model-value="localModelProgress * 100"
+              color="primary"
+              height="8"
+              rounded
+            />
+            <p class="settings-meta">
+              {{
+                t(
+                  localModelPhase === 'downloading'
+                    ? 'settings.localAiDownloading'
+                    : 'settings.localAiPreparing',
+                  { percent: localModelPercent },
+                )
+              }}
+            </p>
+          </template>
+
+          <template v-else-if="localModelStatus === 'ready'">
+            <div class="settings-actions">
+              <VBtn
+                type="button"
+                variant="outlined"
+                color="primary"
+                @click="removeLocalModelDownload"
+              >
+                {{ t('settings.localAiRemove') }}
+              </VBtn>
+            </div>
+          </template>
+
+          <template v-else>
+            <VAlert
+              v-if="localModelStatus === 'error' && localModelError"
+              class="settings-notice"
+              density="comfortable"
+              variant="tonal"
+              type="error"
+            >
+              {{ localModelError }}
+            </VAlert>
+            <p v-else class="settings-meta">{{ t('settings.localAiNotCached') }}</p>
+
+            <div class="settings-actions">
+              <VBtn
+                class="miolog-primary-action"
+                type="button"
+                color="primary"
+                @click="requestLocalModelDownload"
+              >
+                {{ t('settings.localAiDownloadModel', { size: selectedLocalModel?.sizeLabel ?? '' }) }}
+              </VBtn>
+            </div>
+          </template>
+          </template>
+
+          <p v-else class="settings-meta">{{ t('settings.localAiLanguageUnavailable') }}</p>
+        </template>
+      </div>
+
+      <VAlert
+        v-else
+        class="settings-notice"
+        density="comfortable"
+        variant="tonal"
+        type="info"
+      >
+        {{ t('settings.localAiUnsupported') }}
+      </VAlert>
+    </section>
+
+    <section v-if="!isDemoMode && isSyncConfigured" class="panel settings-section">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">{{ t('settings.enrichKicker') }}</p>
+          <h2>{{ t('settings.enrichTitle') }}</h2>
+          <p class="section-helper">{{ t('settings.enrichHelper') }}</p>
+        </div>
+      </div>
+
+      <div class="settings-actions">
+        <VBtn
+          class="miolog-primary-action"
+          type="button"
+          color="primary"
+          :disabled="isEnriching || isSyncing"
+          @click="handleEnrich"
+        >
+          {{ isEnriching ? t('settings.enrichingNow') : t('settings.enrichNow') }}
+        </VBtn>
+      </div>
+
+      <VAlert
+        v-if="enrichNotice"
+        class="settings-notice"
+        density="comfortable"
+        variant="tonal"
+        :type="enrichNoticeTone === 'success' ? 'success' : 'error'"
+        aria-live="polite"
+      >
+        {{ enrichNotice }}
+      </VAlert>
+    </section>
+
+    <section v-if="!isDemoMode" class="panel settings-section">
+      <div class="section-heading">
+        <div>
           <p class="section-kicker">{{ t('settings.backupKicker') }}</p>
           <h2>{{ t('settings.backupTitle') }}</h2>
           <p class="section-helper">{{ t('settings.backupHelper') }}</p>
@@ -414,6 +728,23 @@ async function handleSyncNow() {
     </section>
 
     <p class="settings-version">{{ t('settings.version', { version: appVersion }) }}</p>
+
+    <VDialog v-model="confirmDownloadOpen" class="confirm-dialog" max-width="420">
+      <VCard>
+        <VCardTitle>{{ t('settings.localAiConfirmTitle') }}</VCardTitle>
+        <VCardText>
+          {{ t('settings.localAiConfirmBody', { size: selectedLocalModel?.sizeLabel ?? '' }) }}
+        </VCardText>
+        <VCardActions>
+          <VBtn type="button" variant="outlined" color="primary" @click="confirmDownloadOpen = false">
+            {{ t('settings.localAiConfirmCancel') }}
+          </VBtn>
+          <VBtn class="miolog-primary-action" type="button" color="primary" @click="confirmLocalModelDownload">
+            {{ t('settings.localAiConfirmDownload') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
 
     <VDialog v-model="replaceImportDialogOpen" class="confirm-dialog" max-width="420">
       <VCard>

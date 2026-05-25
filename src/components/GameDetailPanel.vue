@@ -16,9 +16,11 @@ const { ownershipLabel, statusLabel, t } = useI18n()
 const router = useRouter()
 
 const props = defineProps<{
+  addPlayTime: (game: Game, hours: number) => void | Promise<void>
   canUseReviewDraft: boolean
   formatDate: (value: string) => string
   isDraftingReview: boolean
+  draftStatus: string
   logDraft: string
   logs: LogEntry[]
   reviewDraftPreview: string
@@ -30,6 +32,8 @@ const emit = defineEmits<{
   applyReviewDraft: []
   discardReviewDraft: []
   draftReview: []
+  reviewCopied: []
+  reviewCopyFailed: []
   journalCopied: []
   journalCopyFailed: []
   journalExported: []
@@ -37,6 +41,21 @@ const emit = defineEmits<{
   saveLogEdit: [logId: string, content: string]
   updateLogDraft: [value: string]
 }>()
+
+const addTimeInput = ref('')
+const addTimeMenuOpen = ref(false)
+const parsedAddTime = computed(() => {
+  const n = Number.parseFloat(addTimeInput.value.replace(',', '.'))
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : null
+})
+const canAddTime = computed(() => parsedAddTime.value !== null)
+
+async function handleAddTime() {
+  if (!props.selectedGame || parsedAddTime.value === null) return
+  await props.addPlayTime(props.selectedGame, parsedAddTime.value)
+  addTimeInput.value = ''
+  addTimeMenuOpen.value = false
+}
 
 const editingLogId = ref<string | null>(null)
 const editingLogContent = ref('')
@@ -67,7 +86,6 @@ const journalMarkdown = computed(() => {
       playLogs: t('detail.sessionNotes'),
       playTime: t('detail.playTime'),
       rating: t('detail.rating'),
-      review: t('detail.review'),
       status: t('detail.currentStatus'),
       tags: t('detail.tags'),
     },
@@ -151,6 +169,22 @@ function saveEditingLog() {
 
   emit('saveLogEdit', editingLogId.value, trimmedEditingLogContent.value)
   cancelEditingLog()
+}
+
+async function copyReview() {
+  const review = props.selectedGame?.review?.trim()
+
+  if (!review || !navigator.clipboard) {
+    emit('reviewCopyFailed')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(review)
+    emit('reviewCopied')
+  } catch {
+    emit('reviewCopyFailed')
+  }
 }
 
 async function copyJournal() {
@@ -250,27 +284,67 @@ function igdbCreditLine(game: Game) {
         <div class="detail-hero-copy">
           <h2>{{ selectedGame.title }}</h2>
           <div class="detail-hero-control-row">
-          <VMenu location="bottom start">
-            <template #activator="{ props: activatorProps }">
-              <button
-                v-bind="activatorProps"
-                type="button"
-                class="status-pill detail-status-pill"
-              >
-                {{ statusLabel(selectedGame.status) }}
-              </button>
-            </template>
+            <VMenu location="bottom start">
+              <template #activator="{ props: activatorProps }">
+                <button
+                  v-bind="activatorProps"
+                  type="button"
+                  class="status-pill detail-status-pill"
+                >
+                  {{ statusLabel(selectedGame.status) }}
+                </button>
+              </template>
 
-            <VList class="status-menu-list" density="compact">
-              <VListItem
-                v-for="status in GAME_STATUSES"
-                :key="status"
-                :active="selectedGame.status === status"
-                :title="statusLabel(status)"
-                @click="handleStatusChange(selectedGame, status)"
-              />
-            </VList>
-          </VMenu>
+              <VList class="status-menu-list" density="compact">
+                <VListItem
+                  v-for="status in GAME_STATUSES"
+                  :key="status"
+                  :active="selectedGame.status === status"
+                  :title="statusLabel(status)"
+                  @click="handleStatusChange(selectedGame, status)"
+                />
+              </VList>
+            </VMenu>
+
+            <VMenu v-model="addTimeMenuOpen" location="bottom center" :close-on-content-click="false" @update:model-value="!$event && (addTimeInput = '')">
+              <template #activator="{ props: activatorProps }">
+                <button
+                  v-bind="activatorProps"
+                  type="button"
+                  class="icon-button"
+                  :aria-label="t('detail.addTimeButton')"
+                  :title="t('detail.addTimeButton')"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                </button>
+              </template>
+
+              <div class="add-time-menu">
+                <form @submit.prevent="handleAddTime">
+                  <VTextField
+                    v-model="addTimeInput"
+                    class="add-time-input"
+                    inputmode="decimal"
+                    hide-details
+                    autofocus
+                    suffix="h"
+                    :placeholder="t('detail.addTimePlaceholder')"
+                  />
+                  <VBtn
+                    type="submit"
+                    color="primary"
+                    block
+                    :disabled="!canAddTime"
+                  >
+                    {{ t('detail.addTimeButton') }}
+                  </VBtn>
+                </form>
+              </div>
+            </VMenu>
+
             <div class="card-metadata-list detail-hero-metadata">
               <template v-for="(item, index) in detailMetadata" :key="`${item}-${index}`">
                 <span>{{ item }}</span>
@@ -293,47 +367,65 @@ function igdbCreditLine(game: Game) {
       <div v-if="selectedGame.review || canUseReviewDraft || reviewDraftPreview" class="detail-notes">
         <div class="detail-notes-header">
           <p class="section-kicker">{{ t('detail.review') }}</p>
-          <VBtn
-            v-if="canUseReviewDraft"
-            type="button"
-            variant="outlined"
-            color="primary"
-            :disabled="isDraftingReview"
-            :loading="isDraftingReview"
-            @click="emit('draftReview')"
-          >
-            {{
-              isDraftingReview
-                ? t('detail.draftingReview')
-                : selectedGame.review
-                  ? t('detail.redraftFromLogs')
-                  : t('detail.draftFromLogs')
-            }}
-          </VBtn>
+          <div class="detail-notes-actions">
+            <button
+              v-if="selectedGame.review"
+              class="icon-button"
+              type="button"
+              :aria-label="t('detail.copyReview')"
+              :title="t('detail.copyReview')"
+              @click="copyReview"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect width="14" height="14" x="8" y="8" rx="2" />
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+              </svg>
+            </button>
+            <VBtn
+              v-if="canUseReviewDraft"
+              type="button"
+              variant="outlined"
+              color="primary"
+              :disabled="isDraftingReview"
+              :loading="isDraftingReview"
+              @click="emit('draftReview')"
+            >
+              {{
+                isDraftingReview
+                  ? t('detail.draftingReview')
+                  : selectedGame.review
+                    ? t('detail.redraftFromLogs')
+                    : t('detail.draftFromLogs')
+              }}
+            </VBtn>
+          </div>
+        </div>
+
+        <div v-if="isDraftingReview && draftStatus" class="review-status-pill" aria-live="polite">
+          <span class="review-status-pill__dot" aria-hidden="true"></span>
+          <span>{{ draftStatus }}</span>
+        </div>
+
+        <div v-if="reviewDraftPreview" class="detail-notes--draft">
+          <p class="section-kicker">{{ t('detail.reviewDraft') }}</p>
+          <p>{{ reviewDraftPreview }}</p>
+          <div class="home-quick-actions">
+            <VBtn
+              class="miolog-primary-action"
+              color="primary"
+              type="button"
+              @click="emit('applyReviewDraft')"
+            >
+              {{ t('detail.useAsReview') }}
+            </VBtn>
+            <VBtn type="button" variant="outlined" color="primary" @click="emit('discardReviewDraft')">
+              {{ t('detail.discardDraft') }}
+            </VBtn>
+          </div>
         </div>
 
         <p v-if="selectedGame.review">{{ selectedGame.review }}</p>
-        <p v-else class="detail-empty-copy">{{ t('detail.noReviewYet') }}</p>
-      </div>
-
-      <div v-if="reviewDraftPreview" class="detail-notes detail-notes--draft">
-        <div class="detail-notes-header">
-          <p class="section-kicker">{{ t('detail.reviewDraft') }}</p>
-        </div>
-        <p>{{ reviewDraftPreview }}</p>
-        <div class="home-quick-actions">
-          <VBtn
-            class="miolog-primary-action"
-            color="primary"
-            type="button"
-            @click="emit('applyReviewDraft')"
-          >
-            {{ t('detail.useAsReview') }}
-          </VBtn>
-          <VBtn type="button" variant="outlined" color="primary" @click="emit('discardReviewDraft')">
-            {{ t('detail.discardDraft') }}
-          </VBtn>
-        </div>
+        <p v-else-if="!reviewDraftPreview" class="detail-empty-copy">{{ t('detail.noReviewYet') }}</p>
       </div>
 
       <div class="detail-log-zone">

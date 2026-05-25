@@ -4,6 +4,8 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import TrophyUnlockDialog from './components/TrophyUnlockDialog.vue'
 import { useBacklog } from './composables/useBacklog'
 import { useSettings } from './composables/useSettings'
+import { usePwaInstall } from './composables/usePwaInstall'
+import { usePwaUpdate } from './composables/usePwaUpdate'
 import { useI18n } from './i18n'
 import { isDemoMode } from './lib/appMode'
 
@@ -17,11 +19,58 @@ const {
   trophyUnlockQueue,
 } = useBacklog()
 const { settings } = useSettings()
+const {
+  shouldOffer: showInstallBanner,
+  markOffered: markInstallOffered,
+  dismiss: dismissInstall,
+  acknowledge: acknowledgeInstall,
+} = usePwaInstall()
 const { t } = useI18n()
+const { updateAvailable, applyUpdate } = usePwaUpdate()
+
+type PwaInstallElement = HTMLElement & {
+  showDialog: (forced?: boolean) => void
+  isInstallAvailable?: boolean
+  isAppleMobilePlatform?: boolean
+  isAppleDesktopPlatform?: boolean
+}
+const pwaInstall = ref<PwaInstallElement | null>(null)
+// Only surface the banner where install is genuinely actionable: an Apple
+// platform (manual instructions / Add to Dock) or a Chromium browser that has
+// captured `beforeinstallprompt`. Keeps the dead button off Firefox and off
+// dev-mode Chrome (no service worker → no install).
+const installActionable = ref(false)
+let installOffered = false
+
+function refreshInstallActionable() {
+  const el = pwaInstall.value
+
+  if (!el || !showInstallBanner.value || installActionable.value) {
+    return
+  }
+
+  if (!(el.isAppleMobilePlatform || el.isAppleDesktopPlatform || el.isInstallAvailable)) {
+    return
+  }
+
+  installActionable.value = true
+
+  // Count the show only when the banner actually surfaces (see usePwaInstall).
+  if (!installOffered) {
+    installOffered = true
+    markInstallOffered()
+  }
+}
+
+function promptInstall() {
+  pwaInstall.value?.showDialog(true)
+  acknowledgeInstall()
+}
 const lastMainRoute = ref<{ name: string; params?: Record<string, string> } | null>(null)
 const topbarCompact = ref(false)
-const updateAvailable = ref(false)
+const topbarHidden = ref(false)
 let feedbackTimer: number | null = null
+let lastScrollY = 0
 
 const navItems = computed(() => [
   { label: t('nav.home'), name: 'home' },
@@ -31,12 +80,18 @@ const navItems = computed(() => [
 
 const settingsOpen = computed(() => route.name === 'settings')
 const journalOpen = computed(() => route.name === 'journal')
+const brandHead = computed(() =>
+  settings.theme === 'preemNeon' ? '/miolog-head-cyber.svg' : '/miolog-head.svg',
+)
 const settingsIcon = computed(() =>
   settings.theme === 'mio' ? '/miolog-cog-mio.svg' : '/miolog-cog.svg',
 )
 
 function updateTopbarDensity() {
-  topbarCompact.value = window.scrollY > 24
+  const y = window.scrollY
+  topbarCompact.value = y > 24
+  topbarHidden.value = y > 80 && y > lastScrollY
+  lastScrollY = y
 }
 
 /**
@@ -61,23 +116,18 @@ onMounted(() => {
   updateTopbarDensity()
   window.addEventListener('scroll', handleScrollThrottled, { passive: true })
 
-  if ('serviceWorker' in navigator) {
-    const hadController = Boolean(navigator.serviceWorker.controller)
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hadController) {
-        updateAvailable.value = true
-      }
-    })
+  if (showInstallBanner.value) {
+    // Apple flags are ready synchronously; Chromium availability may arrive
+    // later via the event, so check now and listen for it.
+    refreshInstallActionable()
+    pwaInstall.value?.addEventListener('pwa-install-available-event', refreshInstallActionable)
   }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', handleScrollThrottled)
+  pwaInstall.value?.removeEventListener('pwa-install-available-event', refreshInstallActionable)
 })
-
-function applyUpdate() {
-  window.location.reload()
-}
 
 watch(
   () => route.name,
@@ -147,7 +197,7 @@ async function toggleJournal() {
 <template>
   <VApp :theme="settings.theme" class="miolog-v-app">
     <div class="app-shell">
-      <VToolbar class="app-topbar" :class="{ 'is-compact': topbarCompact }" flat>
+      <VToolbar class="app-topbar" :class="{ 'is-compact': topbarCompact, 'is-hidden': topbarHidden }" flat>
         <button
           class="brand-mark"
           type="button"
@@ -156,7 +206,7 @@ async function toggleJournal() {
           :aria-label="t('nav.journalLabel')"
           @click="toggleJournal"
         >
-          <img src="/miolog-head.svg" alt="" />
+          <img :src="brandHead" alt="" />
         </button>
         <span v-if="isDemoMode" class="demo-badge">{{ t('app.demoBadge') }}</span>
         <div class="topbar-tools">
@@ -179,6 +229,23 @@ async function toggleJournal() {
         <button type="button" class="app-update-reload" @click="applyUpdate">
           {{ t('app.updateReload') }}
         </button>
+      </div>
+
+      <div v-if="showInstallBanner && installActionable" class="app-install-banner" role="status">
+        <span>{{ t('app.installPrompt') }}</span>
+        <div class="app-install-actions">
+          <button type="button" class="app-install-action" @click="promptInstall">
+            {{ t('app.installAction') }}
+          </button>
+          <button
+            type="button"
+            class="app-install-dismiss"
+            :aria-label="t('app.installDismiss')"
+            @click="dismissInstall"
+          >
+            ×
+          </button>
+        </div>
       </div>
 
       <div v-if="feedback" class="app-toast-wrap" aria-live="polite">
@@ -210,6 +277,14 @@ async function toggleJournal() {
           </VBtn>
         </div>
       </nav>
+
+      <pwa-install
+        ref="pwaInstall"
+        manifest-url="/manifest.webmanifest"
+        name="MioLog"
+        description="A local-first game journal for your backlog, reviews, and play logs."
+        icon="/pwa-icons/icon-192x192.png"
+      ></pwa-install>
     </div>
   </VApp>
 </template>

@@ -13,7 +13,7 @@ export const APP_LANGUAGES = ['en', 'de'] as const
 
 export type AppLanguage = (typeof APP_LANGUAGES)[number]
 
-export const APP_THEMES = ['journal', 'mio'] as const
+export const APP_THEMES = ['journal', 'mio', 'polar', 'preemNeon'] as const
 
 export type AppTheme = (typeof APP_THEMES)[number]
 
@@ -160,7 +160,6 @@ export interface SyncUser {
 
 export interface SyncCapabilities {
   reviewDraft: boolean
-  playNext: boolean
   igdbMetadata?: boolean
 }
 
@@ -176,17 +175,6 @@ export interface SyncResponse extends SyncSnapshot {
 export interface ReviewDraftResponse {
   gameId: string
   draft: string
-}
-
-export interface PlayNextRecommendationResponse {
-  slot: 'continue' | 'alternate'
-  gameId: string
-  title: string
-  reason: string
-}
-
-export interface PlayNextRecommendationsResponse {
-  recommendations: PlayNextRecommendationResponse[]
 }
 
 export type BackupImportMode = 'merge' | 'replace'

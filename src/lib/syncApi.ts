@@ -1,6 +1,5 @@
 import type {
   AppLanguage,
-  PlayNextRecommendationsResponse,
   ReviewDraftResponse,
   SyncConnectionResponse,
   SyncResponse,
@@ -48,12 +47,13 @@ async function performRequest<T>(
   apiBaseUrl: string,
   syncToken: string,
   init?: RequestInit,
+  timeoutMs = 18000,
 ) {
   const config = requireSyncConfig(apiBaseUrl, syncToken)
   const controller = new AbortController()
   const timeoutId = setTimeout(() => {
     controller.abort()
-  }, 18000) // 18 seconds
+  }, timeoutMs)
 
   try {
     const response = await fetch(`${config.apiBaseUrl}${path}`, {
@@ -107,13 +107,11 @@ export async function requestReviewDraft(
   })
 }
 
-export async function requestPlayNextRecommendation(
+export async function requestEnrich(
   apiBaseUrl: string,
   syncToken: string,
-  language: AppLanguage,
 ) {
-  return performRequest<PlayNextRecommendationsResponse>('/api/ai/play-next', apiBaseUrl, syncToken, {
+  return performRequest<Record<string, never>>('/api/enrich', apiBaseUrl, syncToken, {
     method: 'POST',
-    body: JSON.stringify({ language }),
-  })
+  }, 300000) // 5 minutes — enrichment can take a while for large libraries
 }

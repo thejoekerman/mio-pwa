@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useI18n } from '../i18n'
-import { appDisplayName } from '../lib/appMode'
 
 defineProps<{
   stats: {
@@ -20,31 +19,31 @@ const { t } = useI18n()
   <header class="hero">
     <div class="hero-intro">
       <p class="eyebrow">{{ t('hero.eyebrow') }}</p>
-      <h1>{{ appDisplayName }}</h1>
+      <h1>{{ t('hero.title') }}</h1>
       <p class="lede">{{ t('hero.lede') }}</p>
     </div>
 
-    <div class="stats hero-stats">
-      <article>
-        <strong>{{ stats.total }}</strong>
-        <span>{{ t('hero.totalGames') }}</span>
-      </article>
-      <article>
-        <strong>{{ stats.playing }}</strong>
-        <span>{{ t('hero.currentlyPlaying') }}</span>
-      </article>
-      <article>
-        <strong>{{ stats.ongoing }}</strong>
-        <span>{{ t('hero.ongoing') }}</span>
-      </article>
-      <article>
-        <strong>{{ stats.finished }}</strong>
-        <span>{{ t('hero.finished') }}</span>
-      </article>
-      <article>
-        <strong>{{ stats.playLogs }}</strong>
-        <span>{{ t('hero.playLogs') }}</span>
-      </article>
-    </div>
+    <dl class="stats hero-stats">
+      <div class="wrapped-stat">
+        <dt>{{ t('hero.totalGames') }}</dt>
+        <dd>{{ stats.total }}</dd>
+      </div>
+      <div class="wrapped-stat">
+        <dt>{{ t('hero.currentlyPlaying') }}</dt>
+        <dd>{{ stats.playing }}</dd>
+      </div>
+      <div class="wrapped-stat">
+        <dt>{{ t('hero.ongoing') }}</dt>
+        <dd>{{ stats.ongoing }}</dd>
+      </div>
+      <div class="wrapped-stat">
+        <dt>{{ t('hero.finished') }}</dt>
+        <dd>{{ stats.finished }}</dd>
+      </div>
+      <div class="wrapped-stat">
+        <dt>{{ t('hero.playLogs') }}</dt>
+        <dd>{{ stats.playLogs }}</dd>
+      </div>
+    </dl>
   </header>
 </template>

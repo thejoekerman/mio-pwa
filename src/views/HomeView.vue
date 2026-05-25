@@ -4,15 +4,21 @@ import EmblaCarousel, { type EmblaCarouselType } from 'embla-carousel'
 import { useRouter } from 'vue-router'
 import GameCover from '../components/GameCover.vue'
 import HomeChoiceCard from '../components/HomeChoiceCard.vue'
+import HomeEmptyState from '../components/HomeEmptyState.vue'
+import IconExternalLink from '../components/IconExternalLink.vue'
 import TrophyIcon from '../components/TrophyIcon.vue'
 import { useBacklog } from '../composables/useBacklog'
-import { useI18n } from '../i18n'
+import { useI18n, type MessageKey } from '../i18n'
 import { downloadBackupPayload } from '../lib/backupDownload'
+import {
+  recommendBacklogGames,
+  type BacklogRecommendation,
+  type RecommendationReason,
+} from '../lib/backlogRecommendation'
 import { getTimeToBeatHours } from '../lib/timeToBeat'
 import type { Game, GameStatus } from '../types'
 
 const {
-  canUsePlayNextRecommendation,
   currentFocus,
   dismissBackupReminder,
   duePausedGames,
@@ -20,12 +26,9 @@ const {
   exportBackup,
   finishedYearOptions,
   formatDate,
-  generatePlayNextRecommendation,
   games,
-  isGeneratingPlayNextRecommendation,
   logDraft,
   logs,
-  playNextRecommendations,
   recentLogs,
   saveCurrentLog,
   selectGame,
@@ -35,7 +38,7 @@ const {
   trophyViews,
   updateGameStatus,
 } = useBacklog()
-const { ownershipLabel, statusLabel, t } = useI18n()
+const { ownershipLabel, t } = useI18n()
 const router = useRouter()
 
 const activeGameId = ref<string | null>(null)
@@ -43,7 +46,8 @@ const emblaViewportRef = ref<HTMLElement | null>(null)
 const emblaApi = ref<EmblaCarouselType | null>(null)
 const isDesktopHomeLayout = ref(false)
 const pointerDownPosition = ref<{ x: number; y: number } | null>(null)
-const randomBacklogGame = ref<Game | null>(null)
+const backlogRecommendations = ref<BacklogRecommendation[]>([])
+const recentRecommendationIds = ref<string[]>([])
 const ACTIVE_HOME_STATUSES: GameStatus[] = ['playing', 'ongoing']
 let desktopHomeMediaQuery: MediaQueryList | null = null
 
@@ -95,31 +99,12 @@ const currentGameTimeline = computed(() => {
 
   return entries
 })
-const gamesById = computed(() => new Map(games.value.map((game) => [game.id, game])))
-const randomBacklogCandidates = computed(() =>
+const backlogRecommendationCandidates = computed(() =>
   games.value
     .filter((game) => game.deletedAt === null && game.status === 'backlog')
     .sort((left, right) => left.title.localeCompare(right.title)),
 )
-const enrichedPlayNextRecommendations = computed(() =>
-  playNextRecommendations.value.map((recommendation) => ({
-    ...recommendation,
-    game: gamesById.value.get(recommendation.gameId) ?? null,
-  })),
-)
-const canUseLocalShelfDraw = computed(
-  () => !canUsePlayNextRecommendation.value && randomBacklogCandidates.value.length > 0,
-)
-const canUseAiChoicePanel = computed(
-  () =>
-    canUsePlayNextRecommendation.value ||
-    playNextRecommendations.value.length > 0,
-)
-const shouldShowChoicePanel = computed(
-  () =>
-    canUseAiChoicePanel.value ||
-    canUseLocalShelfDraw.value,
-)
+const canUseLocalRecommendation = computed(() => backlogRecommendationCandidates.value.length > 0)
 
 const activeSlideIndex = computed(() => {
   if (activeHomeGames.value.length === 0 || !activeGameId.value) {
@@ -292,18 +277,51 @@ function goToHomeGame(index: number) {
   emblaApi.value?.scrollTo(index)
 }
 
-function drawRandomBacklogGame() {
-  const candidates =
-    randomBacklogCandidates.value.length > 1 && randomBacklogGame.value
-      ? randomBacklogCandidates.value.filter((game) => game.id !== randomBacklogGame.value?.id)
-      : randomBacklogCandidates.value
+function refreshBacklogRecommendations() {
+  const recommendations = recommendBacklogGames(games.value, {
+    limit: 2,
+    recentGameIds: recentRecommendationIds.value,
+  })
 
-  if (candidates.length === 0) {
-    randomBacklogGame.value = null
-    return
+  backlogRecommendations.value = recommendations
+  recentRecommendationIds.value = [
+    ...recentRecommendationIds.value,
+    ...recommendations.map((recommendation) => recommendation.game.id),
+  ].slice(-4)
+}
+
+function formatRecommendationMeta(game: Game) {
+  return [game.platform || t('home.platformFree'), formatTimeToBeat(game)].filter(Boolean).join(' · ')
+}
+
+function formatRecommendationBody(recommendation: BacklogRecommendation) {
+  return recommendation.reasons.map(formatRecommendationReason).join(' · ')
+}
+
+function formatRecommendationReason(reason: RecommendationReason) {
+  if (reason.kind === 'priority') {
+    return t('home.recommendationReasonPriority', {
+      priority: t(`priority.${reason.priority}` as MessageKey),
+    })
   }
 
-  randomBacklogGame.value = candidates[Math.floor(Math.random() * candidates.length)]
+  if (reason.kind === 'taste') {
+    return t('home.recommendationReasonTaste', { tag: reason.tag })
+  }
+
+  if (reason.kind === 'timeToBeat') {
+    return t('home.recommendationReasonTimeToBeat', { hours: reason.hours })
+  }
+
+  if (reason.kind === 'bigAdventure') {
+    return t('home.recommendationReasonBigAdventure', { hours: reason.hours })
+  }
+
+  if (reason.kind === 'longWaiting') {
+    return t('home.recommendationReasonLongWaiting', { months: reason.months })
+  }
+
+  return t('home.recommendationReasonReady')
 }
 
 async function handleBackupExport() {
@@ -358,14 +376,14 @@ watch(
 )
 
 watch(
-  randomBacklogCandidates,
+  backlogRecommendationCandidates,
   (candidates) => {
-    if (
-      randomBacklogGame.value &&
-      !candidates.some((game) => game.id === randomBacklogGame.value?.id)
-    ) {
-      randomBacklogGame.value = null
-    }
+    backlogRecommendations.value = backlogRecommendations.value.filter((recommendation) =>
+      candidates.some((game) => game.id === recommendation.game.id),
+    )
+    recentRecommendationIds.value = recentRecommendationIds.value.filter((gameId) =>
+      candidates.some((game) => game.id === gameId),
+    )
   },
 )
 
@@ -427,16 +445,25 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <main v-if="featuredGame || shouldShowChoicePanel" class="home-stack">
+    <main v-if="featuredGame || canUseLocalRecommendation" class="home-stack">
       <div v-if="featuredGame" class="home-featured-row">
         <section class="panel home-capture-panel">
-          <div class="home-capture-header">
-            <div
-              class="home-capture-title-row"
-              :class="{ 'home-capture-title-row--with-cover': activeHomeGames.length <= 1 }"
-            >
+          <img
+            v-if="featuredGame.coverUrl"
+            class="home-capture-backdrop"
+            :src="featuredGame.coverUrl"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">{{ t('home.kicker') }}</p>
+              <h2>{{ activeHomeGames.length === 1 ? t('home.activeGame') : t('home.activeGames') }}</h2>
+            </div>
+          </div>
+          <div v-if="activeHomeGames.length <= 1" class="home-capture-header">
+            <div class="home-capture-title-row home-capture-title-row--with-cover">
               <button
-                v-if="activeHomeGames.length <= 1"
                 type="button"
                 class="home-capture-cover-button"
                 :aria-label="t('home.openFullGamePage')"
@@ -450,25 +477,13 @@ onBeforeUnmount(() => {
                 />
               </button>
               <div>
-                <p class="section-kicker">{{ t('home.nowPlaying') }}</p>
-                <h1 v-if="activeHomeGames.length <= 1" class="view-title home-capture-title">
-                  {{ featuredGame.title }}
-                </h1>
-                <div v-if="activeHomeGames.length <= 1" class="home-capture-meta">
-                  <span class="focus-chip">{{ featuredGame.platform || t('home.platformFree') }}</span>
-                  <span class="detail-status">{{ statusLabel(featuredGame.status) }}</span>
-                </div>
+                <h2 class="home-capture-title">{{ featuredGame.title }}</h2>
+                <p class="home-capture-platform">{{ featuredGame.platform || t('home.platformFree') }}</p>
               </div>
             </div>
           </div>
 
           <div v-if="activeHomeGames.length > 1" class="home-now-playing-strip">
-            <div class="section-heading compact">
-              <div>
-                <h2>{{ t('home.activeGames') }}</h2>
-              </div>
-            </div>
-
             <div class="home-playing-rail embla">
               <div ref="emblaViewportRef" class="embla__viewport" :aria-label="t('home.activeGamesAria')">
                 <div class="embla__container">
@@ -550,12 +565,7 @@ onBeforeUnmount(() => {
       </div>
 
       <section class="home-grid">
-        <section v-if="!featuredGame" class="panel home-empty-panel">
-          <div class="empty-state compact">
-            <h3>{{ t('home.noCurrentGame') }}</h3>
-            <p>{{ t('home.noCurrentGameBody') }}</p>
-          </div>
-        </section>
+        <HomeEmptyState v-if="!featuredGame" />
 
         <section
           v-if="duePausedGames.length > 0"
@@ -610,11 +620,7 @@ onBeforeUnmount(() => {
                     :title="t('home.openFullGamePage')"
                     :to="{ name: 'game', params: { gameId: game.id } }"
                   >
-                    <svg aria-hidden="true" viewBox="0 0 24 24">
-                      <path d="M15 3h6v6" />
-                      <path d="M10 14 21 3" />
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                    </svg>
+                    <IconExternalLink />
                   </RouterLink>
                 </div>
               </div>
@@ -642,11 +648,7 @@ onBeforeUnmount(() => {
                 :title="t('home.openFullGamePage')"
                 :to="{ name: 'game', params: { gameId: featuredGame.id } }"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M15 3h6v6" />
-                  <path d="M10 14 21 3" />
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                </svg>
+                <IconExternalLink />
               </RouterLink>
             </div>
           </div>
@@ -673,117 +675,43 @@ onBeforeUnmount(() => {
         </aside>
 
         <section
-          v-if="shouldShowChoicePanel"
+          v-if="canUseLocalRecommendation"
           class="panel home-side-panel home-choice-panel"
         >
-          <div class="home-ai-card">
-            <div class="home-ai-card-header">
-              <div>
-                <p class="section-kicker">{{ t('home.mioChoice') }}</p>
-                <h3>{{ t('home.whatToPlayNext') }}</h3>
-              </div>
-            </div>
+          <div class="section-heading">
+            <p class="section-kicker">{{ t('home.mioChoice') }}</p>
+            <h3>{{ t('home.whatToPlayNext') }}</h3>
+          </div>
 
-            <div class="home-ai-task-list">
-              <article
-                v-if="canUsePlayNextRecommendation || enrichedPlayNextRecommendations.length > 0"
-                class="home-ai-task-card"
-              >
-                <div class="home-ai-task-header">
-                  <div>
-                    <p class="section-kicker">{{ t('home.backlogPickKicker') }}</p>
-                    <h4>{{ t('home.backlogPickTitle') }}</h4>
-                    <p class="soft-meta">{{ t('home.backlogPickBody') }}</p>
-                  </div>
-                  <button
-                    v-if="canUsePlayNextRecommendation"
-                    class="icon-button large"
-                    type="button"
-                    :disabled="isGeneratingPlayNextRecommendation"
-                    :aria-label="
-                      enrichedPlayNextRecommendations.length > 0
-                        ? t('home.refreshPlayNext')
-                        : t('home.askPlayNext')
-                    "
-                    :title="
-                      enrichedPlayNextRecommendations.length > 0
-                        ? t('home.refreshPlayNext')
-                        : t('home.askPlayNext')
-                    "
-                    @click="generatePlayNextRecommendation"
-                  >
-                    <span
-                      v-if="isGeneratingPlayNextRecommendation"
-                      class="button-spinner"
-                      aria-hidden="true"
-                    />
-                    <svg v-else class="shelf-pick-icon" aria-hidden="true" viewBox="0 0 24 24">
-                      <rect x="4" y="4.85" width="12.25" height="2.26" rx="0.6" />
-                      <rect x="4" y="8.86" width="12.25" height="2.26" rx="0.6" />
-                      <rect x="7.76" y="12.87" width="12.25" height="2.26" rx="0.6" />
-                      <rect x="4" y="16.88" width="12.25" height="2.26" rx="0.6" />
-                    </svg>
-                  </button>
-                </div>
-
-                <div v-if="enrichedPlayNextRecommendations.length > 0" class="home-ai-list">
-                  <HomeChoiceCard
-                    v-for="recommendation in enrichedPlayNextRecommendations"
-                    :key="`${recommendation.slot}-${recommendation.gameId}`"
-                    :kicker="
-                      recommendation.slot === 'continue'
-                        ? t('home.continueThread')
-                        : t('home.takeABreather')
-                    "
-                    :title="recommendation.title"
-                    :cover-url="recommendation.game?.coverUrl"
-                    :meta="recommendation.game ? recommendation.game.platform || t('home.platformFree') : null"
-                    :body="recommendation.reason"
-                    :game-id="recommendation.gameId"
-                    :link-label="t('home.openRecommendedGame')"
-                  />
-                </div>
-                <p v-else class="soft-meta">{{ t('home.noPlayNextYetBody') }}</p>
-              </article>
-
-              <article v-if="canUseLocalShelfDraw" class="home-ai-task-card">
-                <div class="home-ai-task-header">
-                  <div>
-                    <p class="section-kicker">{{ t('home.shelfDrawKicker') }}</p>
-                    <h4>{{ t('home.shelfDrawTitle') }}</h4>
-                    <p class="soft-meta">{{ t('home.shelfDrawBody') }}</p>
-                  </div>
-                  <button
-                    class="icon-button large"
-                    type="button"
-                    :aria-label="randomBacklogGame ? t('home.drawAgain') : t('home.drawBacklogGame')"
-                    :title="randomBacklogGame ? t('home.drawAgain') : t('home.drawBacklogGame')"
-                    @click="drawRandomBacklogGame"
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24">
-                      <rect x="5" y="5" width="14" height="14" rx="3" />
-                      <path d="M9 9h.01" />
-                      <path d="M15 9h.01" />
-                      <path d="M12 12h.01" />
-                      <path d="M9 15h.01" />
-                      <path d="M15 15h.01" />
-                    </svg>
-                  </button>
-                </div>
-
-                <div class="home-ai-list">
-                  <HomeChoiceCard
-                    v-if="randomBacklogGame"
-                    :kicker="t('home.drawnFromBacklog')"
-                    :title="randomBacklogGame.title"
-                    :cover-url="randomBacklogGame.coverUrl"
-                    :meta="randomBacklogGame.platform || t('home.platformFree')"
-                    :game-id="randomBacklogGame.id"
-                    :link-label="t('home.openDrawnGame')"
-                  />
-                </div>
-              </article>
-            </div>
+          <p class="soft-meta">{{ t('home.recommendationBody') }}</p>
+          <div class="home-ai-actions">
+            <button
+              class="icon-button large"
+              type="button"
+              :aria-label="backlogRecommendations.length > 0 ? t('home.recommendAgain') : t('home.recommendBacklogGames')"
+              :title="backlogRecommendations.length > 0 ? t('home.recommendAgain') : t('home.recommendBacklogGames')"
+              @click="refreshBacklogRecommendations"
+            >
+              <svg class="shelf-pick-icon" aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="4" y="4.85" width="12.25" height="2.26" rx="0.6" />
+                <rect x="4" y="8.86" width="12.25" height="2.26" rx="0.6" />
+                <rect x="7.76" y="12.87" width="12.25" height="2.26" rx="0.6" />
+                <rect x="4" y="16.88" width="12.25" height="2.26" rx="0.6" />
+              </svg>
+            </button>
+          </div>
+          <div class="home-ai-list">
+            <HomeChoiceCard
+              v-for="recommendation in backlogRecommendations"
+              :key="recommendation.game.id"
+              :kicker="t('home.recommendedFromBacklog')"
+              :title="recommendation.game.title"
+              :cover-url="recommendation.game.coverUrl"
+              :meta="formatRecommendationMeta(recommendation.game)"
+              :body="formatRecommendationBody(recommendation)"
+              :game-id="recommendation.game.id"
+              :link-label="t('home.openRecommendedGame')"
+            />
           </div>
         </section>
 
@@ -821,11 +749,7 @@ onBeforeUnmount(() => {
                 :title="t('trophies.openCabinet')"
                 :to="{ name: 'trophies' }"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M15 3h6v6" />
-                  <path d="M10 14 21 3" />
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                </svg>
+                <IconExternalLink />
               </RouterLink>
             </div>
           </div>
@@ -864,22 +788,13 @@ onBeforeUnmount(() => {
               :title="t('wrapped.viewWrapped', { year: wrappedYear })"
               :to="{ name: 'wrapped', query: { year: wrappedYear } }"
             >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M15 3h6v6" />
-                <path d="M10 14 21 3" />
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              </svg>
+              <IconExternalLink />
             </RouterLink>
           </div>
         </section>
       </section>
     </main>
 
-    <section v-else class="panel home-empty-panel">
-      <div class="empty-state compact">
-        <h3>{{ t('home.noCurrentGame') }}</h3>
-        <p>{{ t('home.noCurrentGameBody') }}</p>
-      </div>
-    </section>
+    <HomeEmptyState v-else />
   </div>
 </template>

@@ -8,6 +8,7 @@ import { useI18n } from '../i18n'
 const route = useRoute()
 const { t } = useI18n()
 const {
+  addPlayTime,
   applyReviewDraft,
   canUseReviewDraft,
   discardReviewDraft,
@@ -15,6 +16,7 @@ const {
   generateReviewDraft,
   games,
   isDraftingReview,
+  localReviewProgress,
   logDraft,
   logs,
   reviewDraftPreview,
@@ -41,6 +43,14 @@ watch(
 
 const gameExists = computed(() => games.value.some((game) => game.id === routeGameId.value))
 
+function handleReviewCopied() {
+  setFeedback(t('feedback.reviewCopied'))
+}
+
+function handleReviewCopyFailed() {
+  setFeedback(t('feedback.reviewCopyFailed'), 'error')
+}
+
 function handleJournalCopied() {
   setFeedback(t('feedback.journalCopied'))
 }
@@ -58,9 +68,11 @@ function handleJournalExported() {
   <div class="view-stack">
     <GameDetailPanel
       v-if="selectedGame"
+      :add-play-time="addPlayTime"
       :can-use-review-draft="canUseReviewDraft"
       :format-date="formatDate"
       :is-drafting-review="isDraftingReview"
+      :draft-status="localReviewProgress"
       :change-game-status="updateGameStatus"
       :log-draft="logDraft"
       :logs="logs"
@@ -69,6 +81,8 @@ function handleJournalExported() {
       @apply-review-draft="applyReviewDraft"
       @discard-review-draft="discardReviewDraft"
       @draft-review="generateReviewDraft"
+      @review-copied="handleReviewCopied"
+      @review-copy-failed="handleReviewCopyFailed"
       @journal-copied="handleJournalCopied"
       @journal-copy-failed="handleJournalCopyFailed"
       @journal-exported="handleJournalExported"

@@ -1,0 +1,14 @@
+name: miolog-pwa
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: _docker/frontend/Dockerfile
+    ports:
+      - "5173:5173"
+      - "4173:4173"
+    volumes:
+      - .:/app
+    environment:
+      - CHOKIDAR_USEPOLLING=true
