@@ -25,6 +25,7 @@ const {
   earnedTrophyViews,
   exportBackup,
   finishedYearOptions,
+  finishedYearOptions,
   formatDate,
   games,
   logDraft,

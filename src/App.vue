@@ -129,6 +129,10 @@ onBeforeUnmount(() => {
   pwaInstall.value?.removeEventListener('pwa-install-available-event', refreshInstallActionable)
 })
 
+function applyUpdate() {
+  window.location.reload()
+}
+
 watch(
   () => route.name,
   () => {
