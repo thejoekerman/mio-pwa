@@ -4,8 +4,9 @@ import { syncWithBackend, testSyncConnection as requestSyncConnection } from '..
 import { translate } from '../i18n'
 import { getSyncErrorMessage } from '../lib/syncUtils'
 import { isDemoMode } from '../lib/appMode'
+import { isOnline } from '../lib/network'
 import type { AppSettingsState } from './useSettings'
-import type { EarnedTrophy, FeedbackState, Game, GameFormState, TrophyUnlockSource } from '../types'
+import type { EarnedTrophy, FeedbackState, Game, GameFormState, SyncSnapshot, TrophyUnlockSource } from '../types'
 
 interface SyncDeps {
   games: Ref<Game[]>
@@ -24,10 +25,24 @@ interface SyncDeps {
   resetForm: () => void
   setFeedback: (message: string, tone?: FeedbackState['tone']) => void
   setAiReviewDraftAvailable: (value: boolean) => void
-  setAiPlayNextAvailable: (value: boolean) => void
   setIgdbMetadataAvailable: (value: boolean) => void
   setLastSyncedAt: (value: string | null) => void
   setLastSyncError: (value: string | null) => void
+}
+
+function snapshotSignature(records: { id: string; updatedAt: string }[]): string {
+  return records
+    .map((record) => `${record.id}@${record.updatedAt}`)
+    .sort()
+    .join('|')
+}
+
+function snapshotsMatch(local: SyncSnapshot, remote: SyncSnapshot): boolean {
+  return (
+    snapshotSignature(local.games) === snapshotSignature(remote.games) &&
+    snapshotSignature(local.logs) === snapshotSignature(remote.logs) &&
+    snapshotSignature(local.earnedTrophies) === snapshotSignature(remote.earnedTrophies)
+  )
 }
 
 export function createSyncHandlers(deps: SyncDeps) {
@@ -48,7 +63,6 @@ export function createSyncHandlers(deps: SyncDeps) {
     resetForm,
     setFeedback,
     setAiReviewDraftAvailable,
-    setAiPlayNextAvailable,
     setIgdbMetadataAvailable,
     setLastSyncedAt,
     setLastSyncError,
@@ -71,7 +85,7 @@ export function createSyncHandlers(deps: SyncDeps) {
       !isDemoMode &&
       settings.syncApiBaseUrl.trim().length > 0 &&
       settings.syncToken.trim().length > 0 &&
-      (typeof navigator === 'undefined' || navigator.onLine)
+      isOnline()
     )
   }
 
@@ -117,11 +131,30 @@ export function createSyncHandlers(deps: SyncDeps) {
       return response
     }
 
-    await replaceWithSyncSnapshot({
+    const remoteSnapshot: SyncSnapshot = {
       games: response.games,
       logs: response.logs,
       earnedTrophies: response.earnedTrophies ?? snapshot.earnedTrophies,
-    })
+    }
+
+    // Nothing changed on either side — skip the full clear/rebuild + reload + trophy re-eval.
+    if (snapshotsMatch(snapshot, remoteSnapshot)) {
+      setLastSyncedAt(response.syncedAt)
+      setLastSyncError(null)
+
+      if (!options?.silentSuccess) {
+        setFeedback(
+          translate(settings.language, 'feedback.syncCompleted', {
+            games: snapshot.games.filter((game) => game.deletedAt === null).length,
+            logs: snapshot.logs.filter((logEntry) => logEntry.deletedAt === null).length,
+          }),
+        )
+      }
+
+      return response
+    }
+
+    await replaceWithSyncSnapshot(remoteSnapshot)
     await ensureLoaded(true)
 
     if (selectedGameId.value) {
@@ -211,7 +244,6 @@ export function createSyncHandlers(deps: SyncDeps) {
         }),
       )
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setAiPlayNextAvailable(response.capabilities.playNext)
       setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
       setLastSyncError(null)
 
@@ -241,7 +273,6 @@ export function createSyncHandlers(deps: SyncDeps) {
       )
 
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setAiPlayNextAvailable(response.capabilities.playNext)
       setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
     } catch {
       // Keep the latest known capability state when the startup refresh fails.
@@ -268,7 +299,6 @@ export function createSyncHandlers(deps: SyncDeps) {
             settings.syncToken,
           )
           setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
-          setAiPlayNextAvailable(connection.capabilities.playNext)
           setIgdbMetadataAvailable(connection.capabilities.igdbMetadata ?? true)
         } catch {
           // Keep the latest known capability state when the refresh call fails.

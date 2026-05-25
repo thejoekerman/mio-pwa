@@ -15,6 +15,9 @@ import {
   wikidataReleaseYearFromClaims,
   tagsFromGenreLabel,
 } from '../lib/wikidataUtils'
+import { addDaysDate } from '../lib/dateUtils'
+import { isOffline } from '../lib/network'
+import { dedupeTags } from '../lib/tags'
 const { statusLabel, t, tagLabel } = useI18n()
 
 interface WikidataSuggestion {
@@ -123,20 +126,7 @@ watch(
 )
 
 function setTags(tags: string[]) {
-  const uniqueTags = new Map<string, string>()
-
-  tags
-    .map((tag) => tag.trim().replace(/\s+/g, ' '))
-    .filter(Boolean)
-    .forEach((tag) => {
-      const normalized = tag.toLowerCase()
-
-      if (!uniqueTags.has(normalized)) {
-        uniqueTags.set(normalized, tag)
-      }
-    })
-
-  props.form.tags = [...uniqueTags.values()].join(', ')
+  props.form.tags = dedupeTags(tags).join(', ')
 }
 
 function updateTags(tags: unknown[]) {
@@ -348,22 +338,12 @@ async function getWikidataMetadata(itemId: string) {
   }
 }
 
-function isOffline() {
-  return typeof navigator !== 'undefined' && navigator.onLine === false
-}
-
-function addDaysDate(days: number) {
-  const date = new Date()
-
-  date.setDate(date.getDate() + days)
-
-  return date.toISOString().slice(0, 10)
-}
 </script>
 
 <template>
   <section class="panel form-panel">
     <button
+      v-if="form.id"
       type="button"
       class="icon-button form-back-button"
       :aria-label="t('form.cancel')"
@@ -600,7 +580,9 @@ function addDaysDate(days: number) {
         v-if="form.id"
         v-model="form.review"
         class="form-control"
-        rows="5"
+        auto-grow
+        max-rows="12"
+        rows="4"
         :hint="t('form.reviewHint')"
         :label="t('form.review')"
         persistent-hint

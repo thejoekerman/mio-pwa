@@ -27,10 +27,10 @@ function demoHeadPlugin() {
           'content="A local-first game journal for your backlog, reviews, play logs, and the small moments that make a playthrough yours."',
           'content="A seeded, interactive MioLog demo with sample games, reviews, play logs, and backlog statuses."',
         )
-        .replaceAll('content="/social-preview.jpg"', 'content="/social-preview.svg"')
+        .replaceAll('content="/social-preview.jpg"', 'content="/social-preview-demo.jpg"')
         .replaceAll(
-          'content="MioLog source-available PWA preview with a neutral app mark"',
-          'content="MioLog source-available PWA preview with sample backlog data"',
+          'content="MioLog app mascot holding a stack of games on a purple background"',
+          'content="MioLog Demo social preview showing the app with sample backlog data"',
         )
         .replace(/<title>MioLog<\/title>/, '<title>MioLog Demo</title>')
     },
@@ -40,5 +40,17 @@ function demoHeadPlugin() {
 // https://vite.dev/config/
 export default defineConfig({
   base: process.env.VITE_APP_TARGET === 'desktop' ? './' : '/',
-  plugins: [demoHeadPlugin(), vue(), vuetify({ autoImport: true })],
+  plugins: [
+    demoHeadPlugin(),
+    // `pwa-install` is the @khmyznikov/pwa-install web component, not a Vue
+    // component — tell the compiler so it doesn't try to resolve it or warn.
+    vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === 'pwa-install' } } }),
+    vuetify({ autoImport: true }),
+  ],
+  build: {
+    // The WebLLM runtime is an intentional ~6 MB lazy chunk (loaded only when a
+    // user drafts on-device) and can't be split further. Raise the limit so the
+    // build isn't noisy about it — eager chunks stay ~240 KB.
+    chunkSizeWarningLimit: 6000,
+  },
 })

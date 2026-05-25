@@ -1,8 +1,10 @@
 import { createApp } from 'vue'
+import '@khmyznikov/pwa-install'
 import './style.css'
 import App from './App.vue'
 import { vuetify } from './plugins/vuetify'
 import { router } from './router'
+import { registerServiceWorkerUpdates } from './composables/usePwaUpdate'
 import { appDisplayName, isDemoMode, isDesktopMode } from './lib/appMode'
 
 document.title = appDisplayName
@@ -14,9 +16,10 @@ if ('serviceWorker' in navigator) {
   if (import.meta.env.PROD && !isDemoMode && !isDesktopMode) {
     window.addEventListener('load', async () => {
       try {
-        await navigator.serviceWorker.register('/sw.js')
+        const registration = await navigator.serviceWorker.register('/sw.js')
+        registerServiceWorkerUpdates(registration)
       } catch (error) {
-        console.error('[miolog] service-worker:register-error', error)
+        console.error('[games-backlog] service-worker:register-error', error)
       }
     })
   } else {
@@ -26,7 +29,7 @@ if ('serviceWorker' in navigator) {
         Promise.all(registrations.map((registration) => registration.unregister())),
       )
       .catch((error) => {
-        console.error('[miolog] service-worker:unregister-error', error)
+        console.error('[games-backlog] service-worker:unregister-error', error)
       })
   }
 }

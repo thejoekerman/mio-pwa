@@ -17,9 +17,17 @@ import { createBackupHandlers } from './backup'
 import { createAiHandlers } from './aiFeatures'
 import { createSyncHandlers } from './sync'
 import { isDemoMode } from '../lib/appMode'
+import { fireCompletionConfetti } from '../lib/confetti'
 import { getDisplayDeveloper, getDisplayPublisher, normalizeReleaseYear } from '../lib/gameMetadata'
 import { createTrophyViews } from '../lib/trophies'
-import { isAtLeastDaysOld, getNextUpdatedAt } from '../lib/dateUtils'
+import { addDaysDate, getTodayDate, isAtLeastDaysOld, getNextUpdatedAt } from '../lib/dateUtils'
+import { isOnline } from '../lib/network'
+import {
+  detectWebGpuSupport,
+  hasLocalReviewModelForLanguage,
+  isWebGpuAvailable,
+} from '../lib/localReviewModels'
+import { dedupeTags } from '../lib/tags'
 import type {
   EarnedTrophy,
   FeedbackState,
@@ -29,14 +37,12 @@ import type {
   GameSortOption,
   GameStatus,
   LogEntry,
-  PlayNextRecommendationResponse,
   TrophyUnlockSource,
 } from '../types'
 
 function createBacklogStore() {
   const {
     settings,
-    setAiPlayNextAvailable,
     setAiReviewDraftAvailable,
     setBackupReminderDismissedAt,
     setIgdbMetadataAvailable,
@@ -66,9 +72,14 @@ function createBacklogStore() {
   const feedback = ref<FeedbackState | null>(null)
   const reviewDraftPreview = ref('')
   const isDraftingReview = ref(false)
-  const playNextRecommendations = ref<PlayNextRecommendationResponse[]>([])
-  const isGeneratingPlayNextRecommendation = ref(false)
-  const isBrowserOnline = ref(getBrowserOnline())
+  const localReviewProgress = ref('')
+  // Seeded optimistically from the sync check, then refined by an adapter probe
+  // so browsers that expose the API but can't run it (e.g. Firefox/macOS) flip off.
+  const webGpuAvailable = ref(isWebGpuAvailable())
+  void detectWebGpuSupport().then((supported) => {
+    webGpuAvailable.value = supported
+  })
+  const isBrowserOnline = ref(isOnline())
   const didInitialize = ref(false)
   const isInitializing = ref(false)
   const autoSyncStarted = ref(false)
@@ -100,7 +111,7 @@ function createBacklogStore() {
   const selectedGame = computed(
     () => games.value.find((game) => game.id === selectedGameId.value) ?? null,
   )
-  const canUseReviewDraft = computed(() =>
+  const canUseServerReviewDraft = computed(() =>
     Boolean(
       selectedGame.value &&
       !isDemoMode &&
@@ -111,18 +122,18 @@ function createBacklogStore() {
       isBrowserOnline.value,
     ),
   )
-  const backlogCandidates = computed(() =>
-    games.value.filter((game) => game.deletedAt === null && game.status === 'backlog'),
-  )
-  const canUsePlayNextRecommendation = computed(() =>
+  const canUseLocalReviewDraft = computed(() =>
     Boolean(
-      settings.aiPlayNextAvailable &&
+      selectedGame.value &&
       !isDemoMode &&
-      settings.syncApiBaseUrl.trim() &&
-      settings.syncToken.trim() &&
-      backlogCandidates.value.length > 0 &&
-      isBrowserOnline.value,
+      settings.aiLocalReviewDraftEnabled &&
+      webGpuAvailable.value &&
+      hasLocalReviewModelForLanguage(settings.language) &&
+      logs.value.length > 0,
     ),
+  )
+  const canUseReviewDraft = computed(
+    () => canUseServerReviewDraft.value || canUseLocalReviewDraft.value,
   )
   const isSyncConfigured = computed(() =>
     Boolean(settings.syncApiBaseUrl.trim() && settings.syncToken.trim()),
@@ -301,12 +312,8 @@ function createBacklogStore() {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`
   }
 
-  function getBrowserOnline() {
-    return typeof navigator === 'undefined' ? true : navigator.onLine
-  }
-
   function updateBrowserOnline() {
-    isBrowserOnline.value = getBrowserOnline()
+    isBrowserOnline.value = isOnline()
   }
 
   if (typeof window !== 'undefined') {
@@ -316,38 +323,12 @@ function createBacklogStore() {
     document.addEventListener('visibilitychange', updateBrowserOnline)
   }
 
-  function getTodayDate() {
-    return new Date().toISOString().slice(0, 10)
-  }
-
-  function addDaysDate(days: number) {
-    const date = new Date()
-
-    date.setDate(date.getDate() + days)
-
-    return date.toISOString().slice(0, 10)
-  }
-
   function markLocalChange() {
     localChangeRevision.value += 1
   }
 
   function parseTags(value: string) {
-    const uniqueTags = new Map<string, string>()
-
-    value
-      .split(',')
-      .map((tag) => tag.trim().replace(/\s+/g, ' '))
-      .filter(Boolean)
-      .forEach((tag) => {
-        const normalized = tag.toLowerCase()
-
-        if (!uniqueTags.has(normalized)) {
-          uniqueTags.set(normalized, tag)
-        }
-      })
-
-    return [...uniqueTags.values()]
+    return dedupeTags(value.split(','))
   }
 
   /**
@@ -460,15 +441,6 @@ function createBacklogStore() {
     earnedTrophies.value = storedTrophies
     totalPlayLogCount.value = storedLogs.length
 
-    if (
-      playNextRecommendations.value.length > 0 &&
-      playNextRecommendations.value.some(
-        (recommendation) => !games.value.some((game) => game.id === recommendation.gameId && game.status === 'backlog'),
-      )
-    ) {
-      playNextRecommendations.value = []
-    }
-
     if (!selectedGameId.value && games.value.length > 0) {
       selectedGameId.value = games.value[0].id
     }
@@ -519,6 +491,10 @@ function createBacklogStore() {
     await loadLogs(gameId)
   }
 
+  // Forward declaration, assigned once below to break a circular dependency with the
+  // trophy handlers. Must stay `let`: a definite-assignment assertion (`!`) is only
+  // valid on `let`/`var`, so prefer-const's suggestion would not compile.
+  // eslint-disable-next-line prefer-const
   let unlockEarnedTrophies!: (source: TrophyUnlockSource) => Promise<EarnedTrophy[]>
 
   const { ensureSyncConfig, scheduleAutoSync, startAutoSync, testSyncConnection, refreshSyncCapabilities, syncNow } =
@@ -539,7 +515,6 @@ function createBacklogStore() {
       resetForm,
       setFeedback,
       setAiReviewDraftAvailable,
-      setAiPlayNextAvailable,
       setIgdbMetadataAvailable,
       setLastSyncedAt,
       setLastSyncError,
@@ -636,7 +611,7 @@ function createBacklogStore() {
         platform: gameForm.platform.trim(),
         ownershipType: gameForm.ownershipType || null,
         tags: parseTags(gameForm.tags),
-        igdbId: isSyncConfigured ? nextIgdbId : null,
+        igdbId: isSyncConfigured.value ? nextIgdbId : null,
         igdbUrl: shouldPreserveIgdbMetadata ? existingPlain?.igdbUrl ?? null : null,
         igdbTtbHastilySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbHastilySeconds ?? null : null,
         igdbTtbNormallySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbNormallySeconds ?? null : null,
@@ -822,6 +797,10 @@ function createBacklogStore() {
       await selectGame(updatedGame.id)
       await unlockEarnedTrophies('user-action')
 
+      if (status === 'finished' && game.status !== 'finished') {
+        void fireCompletionConfetti()
+      }
+
       if (gameForm.id === updatedGame.id) {
         editGame(updatedGame)
       }
@@ -841,6 +820,39 @@ function createBacklogStore() {
         }),
         'error',
       )
+    }
+  }
+
+  async function addPlayTime(game: Game, hoursToAdd: number) {
+    try {
+      const gamePlain = toPlainGame(game)
+      const currentTotal = game.playTimeHours ?? 0
+      const newTotal = Math.round((currentTotal + hoursToAdd) * 10) / 10
+      const updatedGame: Game = {
+        ...gamePlain,
+        playTimeHours: newTotal,
+        updatedAt: getNextUpdatedAt(gamePlain.updatedAt),
+      }
+
+      await saveGame(updatedGame)
+      markLocalChange()
+      updateGameInPlace(updatedGame)
+      await selectGame(updatedGame.id)
+      await unlockEarnedTrophies('user-action')
+
+      if (gameForm.id === updatedGame.id) {
+        gameForm.playTimeHours = String(newTotal)
+      }
+
+      setFeedback(
+        translate(settings.language, 'feedback.timeAdded', {
+          hours: hoursToAdd,
+          title: updatedGame.title,
+        }),
+      )
+      scheduleAutoSync()
+    } catch {
+      setFeedback(translate(settings.language, 'feedback.timeAddFailed'), 'error')
     }
   }
 
@@ -896,15 +908,15 @@ function createBacklogStore() {
     unlockEarnedTrophies,
   })
 
-  const { generateReviewDraft, generatePlayNextRecommendation, applyReviewDraft, discardReviewDraft } =
+  const { generateReviewDraft, applyReviewDraft, discardReviewDraft } =
     createAiHandlers({
       selectedGame,
       gameForm,
       settings,
+      serverReviewDraftReady: canUseServerReviewDraft,
       isDraftingReview,
       reviewDraftPreview,
-      playNextRecommendations,
-      isGeneratingPlayNextRecommendation,
+      localReviewProgress,
       setFeedback,
       ensureSyncConfig,
       toPlainGame,
@@ -925,7 +937,6 @@ function createBacklogStore() {
     selectedGameId.value = null
     logDraft.value = ''
     reviewDraftPreview.value = ''
-    playNextRecommendations.value = []
     await ensureLoaded(true)
     setFeedback(translate(settings.language, 'feedback.demoReset'), 'success')
   }
@@ -962,8 +973,8 @@ function createBacklogStore() {
 
   return {
     canRateCurrentStatus,
-    canUsePlayNextRecommendation,
     canUseReviewDraft,
+    canUseLocalReviewDraft,
     currentFocus,
     discardReviewDraft,
     clearFeedback,
@@ -981,10 +992,8 @@ function createBacklogStore() {
     finishedYearOptions,
     formatDate,
     gameForm,
-    generatePlayNextRecommendation,
     generateReviewDraft,
     games,
-    isGeneratingPlayNextRecommendation,
     isDraftingReview,
     isLoading,
     isSaving,
@@ -992,10 +1001,10 @@ function createBacklogStore() {
     isSyncConfigured,
     isSyncing,
     isTestingSyncConnection,
+    localReviewProgress,
     logDraft,
     logs,
     ownershipFilter,
-    playNextRecommendations,
     recentLogs,
     reviewDraftPreview,
     removeGame,
@@ -1023,6 +1032,7 @@ function createBacklogStore() {
     trophyUnlockQueue,
     latestTrophyUnlockSource,
     trophyViews,
+    addPlayTime,
     updateGameStatus,
     snoozePausedGame,
     applyReviewDraft,

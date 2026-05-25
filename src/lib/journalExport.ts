@@ -12,7 +12,6 @@ interface GameJournalMarkdownOptions {
     playLogs: string
     playTime: string
     rating: string
-    review: string
     status: string
     tags: string
   }
@@ -71,10 +70,8 @@ export function createGameJournalMarkdown({
     sections.push([`## ${labels.overview}`, ...metadata].join('\n'))
   }
 
-  if (game.review.trim()) {
-    sections.push([`## ${labels.review}`, game.review.trim()].join('\n\n'))
-  }
-
+  // The review is intentionally excluded — the journal copy/export is for play
+  // logs; the review has its own dedicated copy button.
   sections.push(
     [
       `## ${labels.playLogs}`,

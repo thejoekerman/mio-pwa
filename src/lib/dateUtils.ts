@@ -1,3 +1,15 @@
+export function getTodayDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+export function addDaysDate(days: number): string {
+  const date = new Date()
+
+  date.setDate(date.getDate() + days)
+
+  return date.toISOString().slice(0, 10)
+}
+
 export function isAtLeastDaysOld(value: string | null, days: number): boolean {
   if (!value) {
     return true

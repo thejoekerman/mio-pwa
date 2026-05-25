@@ -8,6 +8,7 @@ import {
   type LibraryViewMode,
 } from '../types'
 import { isDemoMode } from '../lib/appMode'
+import { DEFAULT_LOCAL_REVIEW_MODEL, isLocalReviewModelId } from '../lib/localReviewModels'
 
 const SETTINGS_STORAGE_KEY = isDemoMode ? 'miolog-demo-settings' : 'miolog-settings'
 
@@ -24,8 +25,9 @@ export interface AppSettingsState {
   lastBackupExportedAt: string | null
   backupReminderDismissedAt: string | null
   aiReviewDraftAvailable: boolean
-  aiPlayNextAvailable: boolean
   igdbMetadataAvailable: boolean
+  aiLocalReviewDraftEnabled: boolean
+  aiLocalReviewModel: string
 }
 
 function detectBrowserLanguage(): AppLanguage {
@@ -117,12 +119,17 @@ function readStoredSettings(): Partial<AppSettingsState> {
       nextState.aiReviewDraftAvailable = parsed.aiReviewDraftAvailable
     }
 
-    if (typeof parsed.aiPlayNextAvailable === 'boolean') {
-      nextState.aiPlayNextAvailable = parsed.aiPlayNextAvailable
-    }
 
     if (typeof parsed.igdbMetadataAvailable === 'boolean') {
       nextState.igdbMetadataAvailable = parsed.igdbMetadataAvailable
+    }
+
+    if (typeof parsed.aiLocalReviewDraftEnabled === 'boolean') {
+      nextState.aiLocalReviewDraftEnabled = parsed.aiLocalReviewDraftEnabled
+    }
+
+    if (typeof parsed.aiLocalReviewModel === 'string' && isLocalReviewModelId(parsed.aiLocalReviewModel)) {
+      nextState.aiLocalReviewModel = parsed.aiLocalReviewModel
     }
 
     return nextState
@@ -146,8 +153,9 @@ function createSettingsStore() {
     lastBackupExportedAt: stored.lastBackupExportedAt ?? null,
     backupReminderDismissedAt: stored.backupReminderDismissedAt ?? null,
     aiReviewDraftAvailable: stored.aiReviewDraftAvailable ?? false,
-    aiPlayNextAvailable: stored.aiPlayNextAvailable ?? false,
     igdbMetadataAvailable: stored.igdbMetadataAvailable ?? false,
+    aiLocalReviewDraftEnabled: stored.aiLocalReviewDraftEnabled ?? false,
+    aiLocalReviewModel: stored.aiLocalReviewModel ?? DEFAULT_LOCAL_REVIEW_MODEL,
   })
 
   watch(
@@ -172,7 +180,6 @@ function createSettingsStore() {
         value.lastBackupExportedAt = null
         value.backupReminderDismissedAt = null
         value.aiReviewDraftAvailable = false
-        value.aiPlayNextAvailable = false
         value.igdbMetadataAvailable = false
       }
 
@@ -217,16 +224,23 @@ function createSettingsStore() {
     settings.aiReviewDraftAvailable = value
   }
 
-  function setAiPlayNextAvailable(value: boolean) {
-    settings.aiPlayNextAvailable = value
-  }
-
   function setIgdbMetadataAvailable(value: boolean) {
     settings.igdbMetadataAvailable = value
   }
 
+  function setAiLocalReviewDraftEnabled(value: boolean) {
+    settings.aiLocalReviewDraftEnabled = value
+  }
+
+  function setAiLocalReviewModel(value: string) {
+    if (isLocalReviewModelId(value)) {
+      settings.aiLocalReviewModel = value
+    }
+  }
+
   return {
-    setAiPlayNextAvailable,
+    setAiLocalReviewDraftEnabled,
+    setAiLocalReviewModel,
     setAiReviewDraftAvailable,
     setIgdbMetadataAvailable,
     setAutoSyncEnabled,
