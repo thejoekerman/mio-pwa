@@ -154,4 +154,24 @@ describe('GameFormPanel', () => {
     expect(mountForm(reactive(createForm({ status: 'paused' }))).find('[data-field="Nudge me"]').exists()).toBe(true)
     expect(mountForm(reactive(createForm({ id: null }))).find('[data-field="Review"]').exists()).toBe(false)
   })
+
+  it('updates status through the select model path and reacts to conditional fields', async () => {
+    const form = reactive(createForm({ status: 'backlog' }))
+    const wrapper = mountForm(form)
+    const statusControl = wrapper.findAllComponents(FormControlStub).find((control) =>
+      control.props('label') === 'Status'
+    )
+
+    await statusControl?.vm.$emit('update:modelValue', 'finished')
+
+    expect(form.status).toBe('finished')
+    expect(wrapper.find('[data-field="Finished on"]').exists()).toBe(true)
+    expect(wrapper.find('[data-field="Nudge me"]').exists()).toBe(false)
+
+    await statusControl?.vm.$emit('update:modelValue', 'paused')
+
+    expect(form.status).toBe('paused')
+    expect(wrapper.find('[data-field="Finished on"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="Nudge me"]').exists()).toBe(true)
+  })
 })
