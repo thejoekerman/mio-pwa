@@ -26,15 +26,23 @@ interface WikidataSuggestion {
   description: string
 }
 
-const props = defineProps<{
+const {
+  canRateCurrentStatus,
+  canUseIgdbMetadata,
+  createdAt,
+  formatDate,
+  isSaving,
+  updatedAt,
+} = defineProps<{
   canRateCurrentStatus: boolean
   canUseIgdbMetadata: boolean
   createdAt?: string | null
   formatDate?: (value: string) => string
-  form: GameFormState
   isSaving: boolean
   updatedAt?: string | null
 }>()
+
+const form = defineModel<GameFormState>('form', { required: true })
 
 const emit = defineEmits<{
   cancel: []
@@ -49,13 +57,13 @@ let wikidataSearchTimer: number | null = null
 let wikidataAbortController: AbortController | null = null
 
 const selectedTags = computed(() =>
-  props.form.tags
+  form.value.tags
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean),
 )
 
-const showPlayTimeField = computed(() => props.form.id !== null || props.form.status === 'finished')
+const showPlayTimeField = computed(() => form.value.id !== null || form.value.status === 'finished')
 
 const statusOptions = computed(() =>
   GAME_STATUSES.map((status) => ({
@@ -68,10 +76,10 @@ const availablePlatforms = computed(() => {
   const sortedPlatforms = [...PLATFORM_OPTIONS].sort((left, right) => left.localeCompare(right))
 
   if (
-    props.form.platform &&
-    !PLATFORM_OPTIONS.includes(props.form.platform as (typeof PLATFORM_OPTIONS)[number])
+    form.value.platform &&
+    !PLATFORM_OPTIONS.includes(form.value.platform as (typeof PLATFORM_OPTIONS)[number])
   ) {
-    return [props.form.platform, ...sortedPlatforms]
+    return [form.value.platform, ...sortedPlatforms]
   }
 
   return sortedPlatforms
@@ -93,10 +101,10 @@ const pauseNudgeOptions = computed(() => {
     { title: t('form.pauseNudgeOneMonth'), value: addDaysDate(30) },
   ]
 
-  if (props.form.nudgeAt && !options.some((option) => option.value === props.form.nudgeAt)) {
+  if (form.value.nudgeAt && !options.some((option) => option.value === form.value.nudgeAt)) {
     options.push({
-      title: t('form.pauseNudgeCurrent', { date: props.form.nudgeAt }),
-      value: props.form.nudgeAt,
+      title: t('form.pauseNudgeCurrent', { date: form.value.nudgeAt }),
+      value: form.value.nudgeAt,
     })
   }
 
@@ -119,14 +127,14 @@ const suggestedTagOptions = computed(() =>
 )
 
 watch(
-  () => (props.form.id ? '' : props.form.title.trim()),
+  () => (form.value.id ? '' : form.value.title.trim()),
   (title) => {
     queueWikidataSearch(title)
   },
 )
 
 function setTags(tags: string[]) {
-  props.form.tags = dedupeTags(tags).join(', ')
+  form.value.tags = dedupeTags(tags).join(', ')
 }
 
 function updateTags(tags: unknown[]) {
@@ -149,16 +157,16 @@ function updateTags(tags: unknown[]) {
 
 function updatePlatform(value: unknown) {
   if (typeof value === 'string') {
-    props.form.platform = value
+    form.value.platform = value
     return
   }
 
   if (value && typeof value === 'object' && 'value' in value) {
-    props.form.platform = String(value.value)
+    form.value.platform = String(value.value)
     return
   }
 
-  props.form.platform = ''
+  form.value.platform = ''
 }
 
 function queueWikidataSearch(title: string) {
@@ -258,7 +266,7 @@ function isLikelyVideoGameDescription(description: string) {
 }
 
 async function useWikidataSuggestion(suggestion: WikidataSuggestion) {
-  props.form.title = suggestion.title
+  form.value.title = suggestion.title
   wikidataSuggestions.value = []
   wikidataSearchFailed.value = false
 
@@ -267,14 +275,14 @@ async function useWikidataSuggestion(suggestion: WikidataSuggestion) {
   if (tags.length > 0) {
     setTags([...selectedTags.value, ...tags])
   }
-  if (developer && !props.form.developer.trim()) {
-    props.form.developer = developer
+  if (developer && !form.value.developer.trim()) {
+    form.value.developer = developer
   }
-  if (publisher && !props.form.publisher.trim()) {
-    props.form.publisher = publisher
+  if (publisher && !form.value.publisher.trim()) {
+    form.value.publisher = publisher
   }
-  if (releaseYear !== null && !props.form.releaseYear.trim()) {
-    props.form.releaseYear = String(releaseYear)
+  if (releaseYear !== null && !form.value.releaseYear.trim()) {
+    form.value.releaseYear = String(releaseYear)
   }
 }
 

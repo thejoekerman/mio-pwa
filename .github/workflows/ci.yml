@@ -39,7 +39,7 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Tests
         run: npm test
 
       - name: Build production PWA
