@@ -135,7 +135,7 @@ async function confirmDelete() {
       :can-use-igdb-metadata="canEditIgdbMetadata"
       :created-at="games.find((entry) => entry.id === routeGameId)?.createdAt ?? null"
       :format-date="formatDate"
-      :form="gameForm"
+      v-model:form="gameForm"
       :is-saving="isSaving"
       :updated-at="games.find((entry) => entry.id === routeGameId)?.updatedAt ?? null"
       @cancel="handleCancel"
