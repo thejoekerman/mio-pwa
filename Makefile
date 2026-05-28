@@ -56,6 +56,11 @@ test:
 	@printf "\n\033[1;32m=== TODO Check ===\033[0m\n"
 	@$(MAKE) todo
 
+.PHONY: test-coverage
+## Run unit tests with a coverage report (html output in coverage/)
+test-coverage:
+	docker compose run --rm frontend npm run test:coverage
+
 
 .PHONY: frontend-build
 ## Execute a pwa build
