@@ -70,6 +70,15 @@ export const demoGames: Game[] = [
     createdAt: '2026-04-26T15:10:00.000Z',
     updatedAt: '2026-05-07T21:10:00.000Z',
   }),
+    game('demo-game-after-the-stream-went-dark', 'After the Stream Went Dark', 'backlog', {
+    coverUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/cobtw4.webp',
+    platform: 'Steam',
+    tags: ['VN', 'Adventure'],
+    playTimeHours: null,
+    review: '',
+    createdAt: '2026-04-26T15:10:00.000Z',
+    updatedAt: '2026-05-07T21:10:00.000Z',
+  }),
   game('demo-game-rune-factory-azuma', 'Rune Factory: Guardians of Azuma', 'backlog', {
     coverUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co99yd.webp',
     platform: 'Switch',
