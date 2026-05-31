@@ -32,16 +32,20 @@ describe('localReviewModels', () => {
     it('returns only models that explicitly support the requested language', () => {
       const en = getModelsForLanguage('en')
       const de = getModelsForLanguage('de')
+      const ja = getModelsForLanguage('ja')
 
       expect(en.length).toBeGreaterThan(0)
       expect(en.every((m) => m.languages.includes('en'))).toBe(true)
       expect(de.every((m) => m.languages.includes('de'))).toBe(true)
+      expect(ja.every((m) => m.languages.includes('ja'))).toBe(true)
     })
 
     it('hasLocalReviewModelForLanguage matches whether the filtered list is non-empty', () => {
       expect(hasLocalReviewModelForLanguage('en')).toBe(true)
       // German has at least one model (Gemma 2 2B); guarding against accidental removal.
       expect(hasLocalReviewModelForLanguage('de')).toBe(true)
+      // Japanese ships with WebLLM's Japanese Gemma variant for now.
+      expect(hasLocalReviewModelForLanguage('ja')).toBe(true)
     })
   })
 
@@ -49,8 +53,11 @@ describe('localReviewModels', () => {
     it('returns a registered model id for every supported language', () => {
       const enDefault = getDefaultModelForLanguage('en')
       const deDefault = getDefaultModelForLanguage('de')
+      const jaDefault = getDefaultModelForLanguage('ja')
       expect(isLocalReviewModelId(enDefault)).toBe(true)
       expect(isLocalReviewModelId(deDefault)).toBe(true)
+      expect(isLocalReviewModelId(jaDefault)).toBe(true)
+      expect(jaDefault).toBe('gemma-2-2b-jpn-it-q4f16_1-MLC')
     })
   })
 

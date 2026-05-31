@@ -12,8 +12,9 @@ export interface LocalReviewModelOption {
   tier: LocalReviewModelTier
   sizeLabel: string
   // App languages this model produces acceptable drafts in. Small models are
-  // English-only; German/Japanese need a capable multilingual model. Curated by
-  // testing — the small Qwen/Llama models output garbage in German.
+  // English-first unless deliberately curated for another language. German is
+  // curated by testing — the small Qwen/Llama models output garbage in German.
+  // Japanese ships with WebLLM's Japanese Gemma variant until we can test more.
   languages: AppLanguage[]
 }
 
@@ -30,13 +31,15 @@ export const LOCAL_REVIEW_MODELS: LocalReviewModelOption[] = [
   // garbage in DE; Gemma 3 1B and StableLM 2 were tested and rejected). Strong
   // English too. Capable devices only (~1.5 GB — not the iPhone 14).
   { id: 'gemma-2-2b-it-q4f16_1-MLC', name: 'Gemma 2 2B', tier: 'quality', sizeLabel: '~1.5 GB', languages: ['en', 'de'] },
+  { id: 'gemma-2-2b-jpn-it-q4f16_1-MLC', name: 'Gemma 2 2B Japanese', tier: 'quality', sizeLabel: '~1.9 GB', languages: ['ja'] },
 ]
 
 // Per-language default model. TS forces an entry here for every AppLanguage, so
-// adding `ja` will surface a compile error until a Japanese model is wired up.
+// adding another language will surface a compile error until a model is wired up.
 const LANGUAGE_MODEL_DEFAULTS: Record<AppLanguage, string> = {
   en: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
   de: 'gemma-2-2b-it-q4f16_1-MLC',
+  ja: 'gemma-2-2b-jpn-it-q4f16_1-MLC',
 }
 
 // Used by useSettings for the initial stored value; per-language resolution
