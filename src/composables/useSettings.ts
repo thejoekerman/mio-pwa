@@ -43,6 +43,10 @@ function detectBrowserLanguage(): AppLanguage {
     if (normalized.startsWith('de')) {
       return 'de'
     }
+
+    if (normalized.startsWith('ja')) {
+      return 'ja'
+    }
   }
 
   return 'en'

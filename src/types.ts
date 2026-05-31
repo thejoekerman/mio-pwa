@@ -9,7 +9,7 @@ export const GAME_STATUSES = [
 
 export type GameStatus = (typeof GAME_STATUSES)[number]
 
-export const APP_LANGUAGES = ['en', 'de'] as const
+export const APP_LANGUAGES = ['en', 'de', 'ja'] as const
 
 export type AppLanguage = (typeof APP_LANGUAGES)[number]
 
