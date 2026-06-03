@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'miolog-v2.3.0'
+const CACHE_VERSION = 'miolog-v2.3.1'
 const SHELL_CACHE = `${CACHE_VERSION}-shell`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 const APP_SHELL_URLS = [
