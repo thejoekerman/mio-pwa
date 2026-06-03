@@ -387,6 +387,43 @@ h3 {
   padding-bottom: 92px;
 }
 
+.app-startup {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 34%),
+    var(--shell-bg);
+  color: var(--text);
+  text-align: center;
+}
+
+.app-startup-mark {
+  width: clamp(88px, 24vw, 132px);
+  aspect-ratio: 1;
+  filter: drop-shadow(0 18px 34px rgba(0, 0, 0, 0.34));
+}
+
+.app-startup-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.app-startup-title {
+  color: var(--text);
+  font-weight: 800;
+  font-size: 1.15rem;
+}
+
+.app-startup-text {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .app-topbar {
   position: sticky;
   top: 0;
