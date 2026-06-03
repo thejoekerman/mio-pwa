@@ -15,6 +15,7 @@ const {
   clearFeedback,
   dismissTrophyUnlocks,
   feedback,
+  isLoading,
   latestTrophyUnlockSource,
   trophyUnlockQueue,
 } = useBacklog()
@@ -196,7 +197,15 @@ async function toggleJournal() {
 
 <template>
   <VApp :theme="settings.theme" class="miolog-v-app">
-    <div class="app-shell">
+    <div v-if="isLoading" class="app-startup" role="status" aria-live="polite">
+      <img class="app-startup-mark" :src="brandHead" alt="" />
+      <div class="app-startup-copy">
+        <p class="app-startup-title">MioLog</p>
+        <p class="app-startup-text">{{ t('app.openingJournal') }}</p>
+      </div>
+    </div>
+
+    <div v-else class="app-shell">
       <VToolbar class="app-topbar" :class="{ 'is-compact': topbarCompact, 'is-hidden': topbarHidden }" flat>
         <button
           class="brand-mark"

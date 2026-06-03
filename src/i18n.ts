@@ -28,6 +28,7 @@ const messages = {
       demoBadge: 'Demo',
       updateAvailable: 'A new version is available.',
       updateReload: 'Reload',
+      openingJournal: 'Opening your journal...',
       installPrompt: 'Add MioLog to your home screen?',
       installAction: 'Install',
       installDismiss: 'Dismiss install prompt',
@@ -573,6 +574,7 @@ const messages = {
       demoBadge: 'Demo',
       updateAvailable: 'Eine neue Version ist verfügbar.',
       updateReload: 'Neu laden',
+      openingJournal: 'Dein Journal wird geöffnet...',
       installPrompt: 'MioLog zum Startbildschirm hinzufügen?',
       installAction: 'Installieren',
       installDismiss: 'Installationshinweis schließen',
@@ -1118,6 +1120,7 @@ const messages = {
         demoBadge: 'デモ',
         updateAvailable: '新しいバージョンがあります。',
         updateReload: '再読み込み',
+        openingJournal: 'ジャーナルを開いています...',
         installPrompt: 'MioLogをホーム画面に追加しますか？',
         installAction: 'インストール',
         installDismiss: 'インストール通知を閉じる'
