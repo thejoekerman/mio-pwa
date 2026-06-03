@@ -745,6 +745,10 @@ pwa-install {
   text-transform: none;
 }
 
+.settings-actions--inline {
+  margin-top: 14px;
+}
+
 .miolog-primary-action.v-btn {
   background: linear-gradient(135deg, var(--button-primary-start), var(--button-primary-end)) !important;
   color: #0c1220 !important;
@@ -779,6 +783,15 @@ pwa-install {
 
 .settings-meta--error {
   color: var(--danger);
+}
+
+.settings-message-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.settings-message-list li + li {
+  margin-top: 0.35rem;
 }
 
 .local-ai-status {

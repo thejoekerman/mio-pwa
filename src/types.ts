@@ -187,6 +187,12 @@ export interface FeedbackState {
   tone: FeedbackTone
 }
 
+export interface LibraryCsvImportResult {
+  created: number
+  updated: number
+  skipped: number
+}
+
 export interface GameFormState {
   id: string | null
   title: string

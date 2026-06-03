@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { isProxy, nextTick, reactive } from 'vue'
 import type { Game } from '../types'
 
 // `useBacklog` is a module-level singleton (like `useSettings`) with deep ties to
@@ -393,6 +393,34 @@ describe('useBacklog', () => {
 
       expect(store.games.value.some((g) => g.id === 'gx')).toBe(false)
       expect(store.gameForm.id).toBeNull()
+    })
+  })
+
+  describe('CSV import', () => {
+    it('saves plain games when confirming a reactive preview plan', async () => {
+      const store = await loadBacklog()
+      const plan = await store.previewLibraryCsvImport(
+        [
+          'mioId,title,status,platform,rating,playTimeHours,finishedDate,coverUrl',
+          ',After the Stream Went Dark,finished,Steam,7,2,2026-06-03,https://images.igdb.com/igdb/image/upload/t_cover_big/cobtw4.webp',
+        ].join('\n'),
+      )
+      const reactivePlan = reactive(plan)
+
+      expect(isProxy(reactivePlan.gamesToSave[0])).toBe(true)
+
+      const result = await store.importLibraryCsv(reactivePlan)
+
+      expect(result).toEqual({ created: 1, updated: 0, skipped: 0 })
+      expect(savedGames).toHaveLength(1)
+      expect(isProxy(savedGames[0])).toBe(false)
+      expect(savedGames[0]).toMatchObject({
+        title: 'After the Stream Went Dark',
+        status: 'finished',
+        rating: 7,
+        playTimeHours: 2,
+        finishedAt: '2026-06-03',
+      })
     })
   })
 })

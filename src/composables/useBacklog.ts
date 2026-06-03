@@ -23,6 +23,12 @@ import { createTrophyViews } from '../lib/trophies'
 import { addDaysDate, getTodayDate, isAtLeastDaysOld, getNextUpdatedAt } from '../lib/dateUtils'
 import { isOnline } from '../lib/network'
 import {
+  createLibraryCsv,
+  createLibraryCsvTemplate,
+  parseLibraryCsvImport,
+  type LibraryCsvImportPlan,
+} from '../lib/libraryCsv'
+import {
   detectWebGpuSupport,
   hasLocalReviewModelForLanguage,
   isWebGpuAvailable,
@@ -36,6 +42,7 @@ import type {
   GameOwnershipFilter,
   GameSortOption,
   GameStatus,
+  LibraryCsvImportResult,
   LogEntry,
   TrophyUnlockSource,
 } from '../types'
@@ -856,6 +863,54 @@ function createBacklogStore() {
     }
   }
 
+  async function exportLibraryCsv() {
+    await ensureLoaded()
+
+    return {
+      csv: createLibraryCsv(games.value.map(toPlainGame)),
+      exportedAt: new Date().toISOString(),
+    }
+  }
+
+  function exportLibraryCsvTemplate() {
+    return createLibraryCsvTemplate()
+  }
+
+  async function previewLibraryCsvImport(rawCsv: string) {
+    await ensureLoaded()
+
+    return parseLibraryCsvImport(rawCsv, games.value.map(toPlainGame), {
+      createId,
+      now: new Date().toISOString(),
+    })
+  }
+
+  async function importLibraryCsv(plan: LibraryCsvImportPlan): Promise<LibraryCsvImportResult> {
+    if (plan.gamesToSave.length === 0) {
+      return {
+        created: 0,
+        updated: 0,
+        skipped: plan.skippedCount,
+      }
+    }
+
+    for (const game of plan.gamesToSave) {
+      await saveGame(toPlainGame(game))
+    }
+
+    markLocalChange()
+    await ensureLoaded(true)
+    await unlockEarnedTrophies('import')
+    await loadLogs(selectedGameId.value)
+    scheduleAutoSync()
+
+    return {
+      created: plan.createCount,
+      updated: plan.updateCount,
+      skipped: plan.skippedCount,
+    }
+  }
+
   async function snoozePausedGame(game: Game, days: number) {
     if (game.status !== 'paused') {
       return
@@ -994,10 +1049,13 @@ function createBacklogStore() {
     gameForm,
     generateReviewDraft,
     games,
+    exportLibraryCsv,
+    exportLibraryCsvTemplate,
     isDraftingReview,
     isLoading,
     isSaving,
     importBackup,
+    importLibraryCsv,
     isSyncConfigured,
     isSyncing,
     isTestingSyncConnection,
@@ -1020,6 +1078,7 @@ function createBacklogStore() {
     selectedGame,
     selectedGameId,
     setFeedback,
+    previewLibraryCsvImport,
     sortOption,
     startAutoSync,
     startCreatingGame,
