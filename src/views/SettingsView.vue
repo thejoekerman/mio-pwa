@@ -6,7 +6,8 @@ import { useSettings } from '../composables/useSettings'
 import { useI18n } from '../i18n'
 import { APP_LANGUAGES, APP_THEMES, type BackupData, type BackupImportMode } from '../types'
 import { isDemoMode } from '../lib/appMode'
-import { downloadBackupPayload } from '../lib/backupDownload'
+import { downloadBackupPayload, downloadTextFile } from '../lib/backupDownload'
+import type { LibraryCsvImportPlan } from '../lib/libraryCsv'
 import { requestEnrich } from '../lib/syncApi'
 import {
   detectWebGpuSupport,
@@ -22,10 +23,14 @@ import {
 const appVersion = packageJson.version
 const {
   exportBackup,
+  exportLibraryCsv,
+  exportLibraryCsvTemplate,
+  importLibraryCsv,
   importBackup,
   isSyncConfigured,
   isSyncing,
   isTestingSyncConnection,
+  previewLibraryCsvImport,
   resetDemoLibrary,
   setFeedback,
   syncNow,
@@ -41,6 +46,11 @@ const backupNoticeTone = ref<'success' | 'error'>('success')
 const pendingImportFile = ref<File | null>(null)
 const pendingImportInput = ref<HTMLInputElement | null>(null)
 const replaceImportDialogOpen = ref(false)
+const csvFileInput = ref<HTMLInputElement | null>(null)
+const csvNotice = ref('')
+const csvNoticeTone = ref<'success' | 'error'>('success')
+const csvImportDialogOpen = ref(false)
+const csvImportPlan = ref<LibraryCsvImportPlan | null>(null)
 const syncNotice = ref('')
 const syncNoticeTone = ref<'success' | 'error'>('success')
 const isEnriching = ref(false)
@@ -234,6 +244,10 @@ function triggerImport() {
   fileInput.value?.click()
 }
 
+function triggerCsvImport() {
+  csvFileInput.value?.click()
+}
+
 function updateLanguage(value: string | null) {
   if (value && APP_LANGUAGES.includes(value as typeof settings.language)) {
     setLanguage(value as typeof settings.language)
@@ -259,6 +273,82 @@ async function handleExport() {
   setFeedback(t('feedback.backupExported', { date: payload.exportedAt.slice(0, 10) }))
   backupNoticeTone.value = 'success'
   backupNotice.value = t('feedback.backupExportedNotice', { date: payload.exportedAt.slice(0, 10) })
+}
+
+function handleTemplateCsvExport() {
+  downloadTextFile(
+    'miolog-library-template.csv',
+    exportLibraryCsvTemplate(),
+    'text/csv;charset=utf-8',
+  )
+  csvNoticeTone.value = 'success'
+  csvNotice.value = t('settings.csvTemplateExported')
+}
+
+async function handleLibraryCsvExport() {
+  const payload = await exportLibraryCsv()
+  const dateLabel = payload.exportedAt.slice(0, 10)
+
+  downloadTextFile(
+    `miolog-library-${dateLabel}.csv`,
+    payload.csv,
+    'text/csv;charset=utf-8',
+  )
+  csvNoticeTone.value = 'success'
+  csvNotice.value = t('settings.csvLibraryExported')
+}
+
+async function handleLibraryCsvImport(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+
+  if (!file) {
+    return
+  }
+
+  try {
+    csvImportPlan.value = await previewLibraryCsvImport(await file.text())
+    csvImportDialogOpen.value = true
+  } catch (error) {
+    console.error(error)
+    csvNoticeTone.value = 'error'
+    csvNotice.value = t('settings.csvImportFailed')
+  } finally {
+    input.value = ''
+  }
+}
+
+function cancelLibraryCsvImport() {
+  csvImportDialogOpen.value = false
+  csvImportPlan.value = null
+}
+
+async function confirmLibraryCsvImport() {
+  const plan = csvImportPlan.value
+
+  if (!plan || plan.gamesToSave.length === 0) {
+    return
+  }
+
+  try {
+    const result = await importLibraryCsv(plan)
+
+    csvNoticeTone.value = 'success'
+    csvNotice.value = t('settings.csvImportCompleted', {
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+    })
+    setFeedback(csvNotice.value)
+  } catch (error) {
+    console.error(error)
+    csvNoticeTone.value = 'error'
+    csvNotice.value = t('settings.csvImportFailed')
+    setFeedback(csvNotice.value, 'error')
+  } finally {
+    csvImportDialogOpen.value = false
+    csvImportPlan.value = null
+  }
 }
 
 async function handleImport(event: Event) {
@@ -717,6 +807,54 @@ async function handleSyncNow() {
       </div>
     </section>
 
+    <section v-if="!isDemoMode" class="panel settings-section">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">{{ t('settings.csvKicker') }}</p>
+          <h2>{{ t('settings.csvTitle') }}</h2>
+          <p class="section-helper">{{ t('settings.csvHelper') }}</p>
+          <div class="settings-actions settings-actions--inline">
+            <VBtn type="button" variant="outlined" color="primary" @click="handleTemplateCsvExport">
+              {{ t('settings.csvExportTemplate') }}
+            </VBtn>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <p class="settings-meta">
+          {{ t('settings.csvColumns') }}
+        </p>
+
+        <div class="settings-actions">
+          <VBtn type="button" variant="outlined" color="primary" @click="handleLibraryCsvExport">
+            {{ t('settings.csvExportLibrary') }}
+          </VBtn>
+          <VBtn class="miolog-primary-action" type="button" color="primary" @click="triggerCsvImport">
+            {{ t('settings.csvImport') }}
+          </VBtn>
+          <input
+            ref="csvFileInput"
+            class="visually-hidden"
+            type="file"
+            accept=".csv,text/csv"
+            @change="handleLibraryCsvImport"
+          />
+        </div>
+
+        <VAlert
+          v-if="csvNotice"
+          class="settings-notice"
+          density="comfortable"
+          variant="tonal"
+          :type="csvNoticeTone === 'success' ? 'success' : 'error'"
+          aria-live="polite"
+        >
+          {{ csvNotice }}
+        </VAlert>
+      </div>
+    </section>
+
     <section v-if="isDemoMode" class="panel settings-section">
       <div class="section-heading">
         <div>
@@ -756,6 +894,65 @@ async function handleSyncNow() {
           </VBtn>
           <VBtn class="miolog-primary-action" type="button" color="primary" @click="confirmReplaceImport">
             {{ t('settings.replaceImport') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="csvImportDialogOpen" class="confirm-dialog" max-width="560">
+      <VCard>
+        <VCardTitle>{{ t('settings.csvPreviewTitle') }}</VCardTitle>
+        <VCardText>
+          <p v-if="csvImportPlan" class="settings-meta">
+            {{
+              t('settings.csvPreviewSummary', {
+                created: csvImportPlan.createCount,
+                updated: csvImportPlan.updateCount,
+                skipped: csvImportPlan.skippedCount,
+              })
+            }}
+          </p>
+
+          <VAlert
+            v-if="csvImportPlan?.errors.length"
+            class="settings-notice"
+            density="comfortable"
+            variant="tonal"
+            type="error"
+          >
+            <ul class="settings-message-list">
+              <li v-for="error in csvImportPlan.errors.slice(0, 6)" :key="error">
+                {{ error }}
+              </li>
+            </ul>
+          </VAlert>
+
+          <VAlert
+            v-if="csvImportPlan?.warnings.length"
+            class="settings-notice"
+            density="comfortable"
+            variant="tonal"
+            type="warning"
+          >
+            <ul class="settings-message-list">
+              <li v-for="warning in csvImportPlan.warnings.slice(0, 6)" :key="warning">
+                {{ warning }}
+              </li>
+            </ul>
+          </VAlert>
+        </VCardText>
+        <VCardActions>
+          <VBtn type="button" variant="outlined" color="primary" @click="cancelLibraryCsvImport">
+            {{ t('settings.cancelImport') }}
+          </VBtn>
+          <VBtn
+            class="miolog-primary-action"
+            type="button"
+            color="primary"
+            :disabled="!csvImportPlan || csvImportPlan.gamesToSave.length === 0"
+            @click="confirmLibraryCsvImport"
+          >
+            {{ t('settings.csvConfirmImport') }}
           </VBtn>
         </VCardActions>
       </VCard>
