@@ -87,6 +87,17 @@ const brandHead = computed(() =>
 const settingsIcon = computed(() =>
   settings.theme === 'mio' ? '/miolog-cog-mio.svg' : '/miolog-cog.svg',
 )
+const showStartup = ref(isLoading.value)
+
+watch(
+  isLoading,
+  (loading) => {
+    if (!loading) {
+      showStartup.value = false
+    }
+  },
+  { immediate: true },
+)
 
 function updateTopbarDensity() {
   const y = window.scrollY
@@ -197,7 +208,7 @@ async function toggleJournal() {
 
 <template>
   <VApp :theme="settings.theme" class="miolog-v-app">
-    <div v-if="isLoading" class="app-startup" role="status" aria-live="polite">
+    <div v-if="showStartup" class="app-startup" role="status" aria-live="polite">
       <img class="app-startup-mark" :src="brandHead" alt="" />
       <div class="app-startup-copy">
         <p class="app-startup-title">MioLog</p>
