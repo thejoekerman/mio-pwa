@@ -2,7 +2,6 @@ import Papa from 'papaparse'
 import { GAME_STATUSES, type Game, type GameStatus } from '../types'
 
 export const LIBRARY_CSV_COLUMNS = [
-  'mioId',
   'title',
   'status',
   'platform',
@@ -10,6 +9,7 @@ export const LIBRARY_CSV_COLUMNS = [
   'playTimeHours',
   'finishedDate',
   'coverUrl',
+  'mioId',
 ] as const
 
 export interface LibraryCsvImportRow {
@@ -53,7 +53,6 @@ export function createLibraryCsvTemplate() {
 
 export function createLibraryCsv(games: Game[]) {
   const rows = games.map((game) => [
-    game.id,
     game.title,
     game.status,
     game.platform,
@@ -61,6 +60,7 @@ export function createLibraryCsv(games: Game[]) {
     game.playTimeHours === null ? '' : String(game.playTimeHours),
     game.status === 'finished' && game.finishedAt ? game.finishedAt.slice(0, 10) : '',
     game.coverUrl ?? '',
+    game.id,
   ])
 
   return toCsv([LIBRARY_CSV_COLUMNS, ...rows])
@@ -104,6 +104,7 @@ export function parseLibraryCsvImport(
   }
 
   const existingById = new Map(existingGames.map((game) => [game.id, game]))
+  const existingCreateKeys = new Set(existingGames.map((game) => duplicateKey(game.title, game.platform)))
   let latestUpdatedAt = options.now
 
   parsedRows.slice(1).forEach((csvRow, index) => {
@@ -119,6 +120,7 @@ export function parseLibraryCsvImport(
 
     const mioId = value('mioId')
     const title = value('title')
+    const platform = value('platform')
     const existingGame = mioId ? existingById.get(mioId) ?? null : null
     const action = existingGame ? 'update' : 'create'
 
@@ -132,14 +134,23 @@ export function parseLibraryCsvImport(
       rowErrors.push(`Line ${line}: title is required.`)
     }
 
-    const status = parseStatus(value('status'), line, rowErrors)
+    if (!mioId && title && existingCreateKeys.has(duplicateKey(title, platform))) {
+      rowErrors.push(
+        `Line ${line}: "${title}" already exists with this platform. Export CSV to bulk-edit existing games, or change the platform/title to import a separate game.`,
+      )
+    }
+
+    const statusResult = parseStatus(value('status'), line, rowErrors)
+    const status = statusResult.status
     const rating = parseRating(value('rating'), line, rowErrors)
     const playTimeHours = parsePlayTime(value('playTimeHours'), line, rowErrors)
-    const finishedDate = parseFinishedDate(value('finishedDate'), status, line, rowErrors, rowWarnings)
+    const finishedDate = statusResult.valid
+      ? parseFinishedDate(value('finishedDate'), status, line, rowErrors, rowWarnings)
+      : null
     const coverUrl = parseCoverUrl(value('coverUrl'), line, rowErrors)
     const normalizedRating = canRateStatus(status) ? rating : null
 
-    if (!canRateStatus(status) && rating !== null) {
+    if (statusResult.valid && !canRateStatus(status) && rating !== null) {
       rowWarnings.push(`Line ${line}: rating is only imported for finished or abandoned games.`)
     }
 
@@ -164,7 +175,7 @@ export function parseLibraryCsvImport(
       id: mioId || options.createId(),
       title,
       status,
-      platform: value('platform'),
+      platform,
       rating: normalizedRating,
       playTimeHours,
       finishedDate,
@@ -175,6 +186,9 @@ export function parseLibraryCsvImport(
     plan.gamesToSave.push(game)
     plan.createCount += action === 'create' ? 1 : 0
     plan.updateCount += action === 'update' ? 1 : 0
+    if (action === 'create') {
+      existingCreateKeys.add(duplicateKey(title, platform))
+    }
     plan.warnings.push(...rowWarnings)
     plan.rows.push({
       line,
@@ -193,21 +207,34 @@ function rowFromRecord(record: Record<(typeof LIBRARY_CSV_COLUMNS)[number], stri
   return LIBRARY_CSV_COLUMNS.map((column) => record[column])
 }
 
+function duplicateKey(title: string, platform: string) {
+  return `${normalizeDuplicatePart(title)}\u0000${normalizeDuplicatePart(platform)}`
+}
+
+function normalizeDuplicatePart(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 function canRateStatus(status: GameStatus) {
   return status === 'finished' || status === 'abandoned'
 }
 
-function parseStatus(value: string, line: number, errors: string[]): GameStatus {
+function parseStatus(
+  value: string,
+  line: number,
+  errors: string[],
+): { status: GameStatus; valid: boolean } {
   if (!value) {
-    return 'backlog'
+    return { status: 'backlog', valid: true }
   }
 
-  if (GAME_STATUSES.includes(value as GameStatus)) {
-    return value as GameStatus
+  const normalizedValue = value.toLowerCase()
+  if (GAME_STATUSES.includes(normalizedValue as GameStatus)) {
+    return { status: normalizedValue as GameStatus, valid: true }
   }
 
   errors.push(`Line ${line}: status must be one of ${GAME_STATUSES.join(', ')}.`)
-  return 'backlog'
+  return { status: 'backlog', valid: false }
 }
 
 function parseRating(value: string, line: number, errors: string[]) {
@@ -228,12 +255,14 @@ function parsePlayTime(value: string, line: number, errors: string[]) {
     return null
   }
 
-  if (!/^\d+(?:\.\d+)?$/.test(value)) {
-    errors.push(`Line ${line}: playTimeHours must be a non-negative number using "." for decimals.`)
+  const normalizedValue = value.replace(',', '.')
+
+  if (!/^\d+(?:\.\d+)?$/.test(normalizedValue)) {
+    errors.push(`Line ${line}: playTimeHours must be a non-negative number using "." or "," for decimals.`)
     return null
   }
 
-  return Math.round(Number.parseFloat(value) * 10) / 10
+  return Math.round(Number.parseFloat(normalizedValue) * 10) / 10
 }
 
 function parseFinishedDate(
