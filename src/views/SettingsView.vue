@@ -51,6 +51,7 @@ const csvNotice = ref('')
 const csvNoticeTone = ref<'success' | 'error'>('success')
 const csvImportDialogOpen = ref(false)
 const csvImportPlan = ref<LibraryCsvImportPlan | null>(null)
+const CSV_PREVIEW_MESSAGE_LIMIT = 6
 const syncNotice = ref('')
 const syncNoticeTone = ref<'success' | 'error'>('success')
 const isEnriching = ref(false)
@@ -72,6 +73,36 @@ const importModeOptions = computed(() => [
   { title: t('settings.mergeMode'), value: 'merge' },
   { title: t('settings.replaceMode'), value: 'replace' },
 ])
+const csvPreviewIssueSummary = computed(() => {
+  const plan = csvImportPlan.value
+
+  if (!plan || (plan.errors.length === 0 && plan.warnings.length === 0)) {
+    return ''
+  }
+
+  return t('settings.csvPreviewIssueSummary', {
+    errors: plan.errors.length,
+    warnings: plan.warnings.length,
+  })
+})
+const csvPreviewErrorsTitle = computed(() =>
+  t('settings.csvPreviewErrorsTitle', {
+    shown: Math.min(csvImportPlan.value?.errors.length ?? 0, CSV_PREVIEW_MESSAGE_LIMIT),
+    total: csvImportPlan.value?.errors.length ?? 0,
+  }),
+)
+const csvPreviewWarningsTitle = computed(() =>
+  t('settings.csvPreviewWarningsTitle', {
+    shown: Math.min(csvImportPlan.value?.warnings.length ?? 0, CSV_PREVIEW_MESSAGE_LIMIT),
+    total: csvImportPlan.value?.warnings.length ?? 0,
+  }),
+)
+const csvPreviewErrors = computed(() =>
+  (csvImportPlan.value?.errors ?? []).slice(0, CSV_PREVIEW_MESSAGE_LIMIT).map(formatCsvPreviewMessage),
+)
+const csvPreviewWarnings = computed(() =>
+  (csvImportPlan.value?.warnings ?? []).slice(0, CSV_PREVIEW_MESSAGE_LIMIT).map(formatCsvPreviewMessage),
+)
 const localModelCacheStatus = ref<Record<string, boolean>>({})
 // Only offer models that can actually write in the current app language — the
 // small models output garbage in German, so they're filtered out when in DE.
@@ -88,6 +119,14 @@ const hasModelForLanguage = computed(() => hasLocalReviewModelForLanguage(settin
 const effectiveModelId = computed(() =>
   resolveLocalReviewModel(settings.aiLocalReviewModel, settings.language),
 )
+
+function formatCsvPreviewMessage(message: string) {
+  return message.replace(
+    /^Line (\d+): "(.+)" already exists with this platform\. Export CSV to bulk-edit existing games, or change the platform\/title to import a separate game\.$/,
+    (_match, line: string, title: string) =>
+      t('settings.csvPreviewDuplicateMessage', { line, title }),
+  )
+}
 const selectedLocalModel = computed(
   () => LOCAL_REVIEW_MODELS.find((model) => model.id === effectiveModelId.value) ?? null,
 )
@@ -822,9 +861,23 @@ async function handleSyncNow() {
       </div>
 
       <div class="settings-grid">
-        <p class="settings-meta">
-          {{ t('settings.csvColumns') }}
-        </p>
+        <VExpansionPanels class="settings-help-panel" variant="accordion">
+          <VExpansionPanel>
+            <VExpansionPanelTitle>{{ t('settings.csvRulesTitle') }}</VExpansionPanelTitle>
+            <VExpansionPanelText>
+              <ul class="settings-message-list">
+                <li>{{ t('settings.csvRuleTitle') }}</li>
+                <li>{{ t('settings.csvRuleBlank') }}</li>
+                <li>{{ t('settings.csvRuleStatus') }}</li>
+                <li>{{ t('settings.csvRulePlayTime') }}</li>
+                <li>{{ t('settings.csvRuleFinishedDate') }}</li>
+                <li>{{ t('settings.csvRuleMioIdNew') }}</li>
+                <li>{{ t('settings.csvRuleMioIdEdit') }}</li>
+                <li>{{ t('settings.csvRuleBackup') }}</li>
+              </ul>
+            </VExpansionPanelText>
+          </VExpansionPanel>
+        </VExpansionPanels>
 
         <div class="settings-actions">
           <VBtn type="button" variant="outlined" color="primary" @click="handleLibraryCsvExport">
@@ -912,34 +965,36 @@ async function handleSyncNow() {
               })
             }}
           </p>
+          <p v-if="csvPreviewIssueSummary" class="settings-meta">
+            {{ csvPreviewIssueSummary }}
+          </p>
 
-          <VAlert
-            v-if="csvImportPlan?.errors.length"
-            class="settings-notice"
-            density="comfortable"
-            variant="tonal"
-            type="error"
+          <VExpansionPanels
+            v-if="csvImportPlan?.errors.length || csvImportPlan?.warnings.length"
+            class="settings-help-panel settings-preview-panel"
+            variant="accordion"
           >
-            <ul class="settings-message-list">
-              <li v-for="error in csvImportPlan.errors.slice(0, 6)" :key="error">
-                {{ error }}
-              </li>
-            </ul>
-          </VAlert>
-
-          <VAlert
-            v-if="csvImportPlan?.warnings.length"
-            class="settings-notice"
-            density="comfortable"
-            variant="tonal"
-            type="warning"
-          >
-            <ul class="settings-message-list">
-              <li v-for="warning in csvImportPlan.warnings.slice(0, 6)" :key="warning">
-                {{ warning }}
-              </li>
-            </ul>
-          </VAlert>
+            <VExpansionPanel v-if="csvImportPlan?.errors.length">
+              <VExpansionPanelTitle>{{ csvPreviewErrorsTitle }}</VExpansionPanelTitle>
+              <VExpansionPanelText>
+                <ul class="settings-message-list settings-message-list--error">
+                  <li v-for="error in csvPreviewErrors" :key="error">
+                    {{ error }}
+                  </li>
+                </ul>
+              </VExpansionPanelText>
+            </VExpansionPanel>
+            <VExpansionPanel v-if="csvImportPlan?.warnings.length">
+              <VExpansionPanelTitle>{{ csvPreviewWarningsTitle }}</VExpansionPanelTitle>
+              <VExpansionPanelText>
+                <ul class="settings-message-list settings-message-list--warning">
+                  <li v-for="warning in csvPreviewWarnings" :key="warning">
+                    {{ warning }}
+                  </li>
+                </ul>
+              </VExpansionPanelText>
+            </VExpansionPanel>
+          </VExpansionPanels>
         </VCardText>
         <VCardActions>
           <VBtn type="button" variant="outlined" color="primary" @click="cancelLibraryCsvImport">
