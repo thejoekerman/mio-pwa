@@ -8,6 +8,7 @@ export const GAME_STATUSES = [
 ] as const
 
 export type GameStatus = (typeof GAME_STATUSES)[number]
+export type GameDisplayStatus = GameStatus | 'replaying'
 
 export const APP_LANGUAGES = ['en', 'de', 'ja'] as const
 
@@ -81,6 +82,80 @@ export const SUGGESTED_TAGS = [
   'Co-op',
   'Indie',
 ] as const
+
+// Transitional 3.0 persistence contracts. The existing `Game` and `LogEntry`
+// interfaces remain the 2.x UI projection until each feature consumes Game +
+// Journey directly.
+export type MetadataProvider = 'wikidata' | 'wikipedia' | 'howlongtobeat'
+
+export interface ExternalReference {
+  provider: MetadataProvider
+  externalId: string
+  url: string | null
+}
+
+export interface PlaytimeEstimates {
+  mainStoryHours: number | null
+  mainExtrasHours: number | null
+  completionistHours: number | null
+  source: 'howlongtobeat'
+  refreshedAt: string
+}
+
+export interface GameArtwork {
+  url: string
+  source: {
+    provider: MetadataProvider | 'manual'
+    pageUrl: string | null
+  }
+}
+
+export interface CanonicalGame {
+  id: string
+  title: string
+  releaseYear: number | null
+  developers: string[]
+  publishers: string[]
+  genres: string[]
+  themes: string[]
+  gameModes: string[]
+  tags: string[]
+  cover: GameArtwork | null
+  externalReferences: ExternalReference[]
+  playtimeEstimates: PlaytimeEstimates | null
+  metadataReviewedAt: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface Journey {
+  id: string
+  gameId: string
+  status: GameStatus
+  platform: string
+  ownershipType: GameOwnershipType | null
+  priority: GamePriority | null
+  rating: number | null
+  review: string
+  playTimeHours: number | null
+  startedAt: string | null
+  finishedAt: string | null
+  pausedAt: string | null
+  nudgeAt: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface JourneyLogEntry {
+  id: string
+  journeyId: string
+  content: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
 
 export interface Game {
   id: string
