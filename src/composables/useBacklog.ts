@@ -10,6 +10,7 @@ import {
   getLogsForJourney,
   resetDemoData,
   saveGame,
+  saveGameMetadata,
   saveJourney,
   saveLogEntryForJourney,
 } from '../lib/backlogDb'
@@ -414,17 +415,6 @@ function createBacklogStore() {
   }
 
   /**
-   * Optimization: Update a game in-place instead of reloading the entire table.
-   * Used after saveGame to avoid O(n) full reload + O(n×trophies) re-evaluation.
-   */
-  function updateGameInPlace(updatedGame: Game) {
-    const index = games.value.findIndex((game) => game.id === updatedGame.id)
-    if (index !== -1) {
-      games.value[index] = updatedGame
-    }
-  }
-
-  /**
    * Optimization: Remove a game in-place instead of reloading the entire table.
    * Used after deleteGame to avoid O(n) full reload.
    */
@@ -503,8 +493,16 @@ function createBacklogStore() {
   }
 
   function startEditingGame(game: Game) {
+    const shouldKeepSelectedJourney = selectedGameId.value === game.id && selectedJourneyId.value !== null
     selectedGameId.value = game.id
-    editGame(game)
+
+    if (!shouldKeepSelectedJourney) {
+      selectedJourneyId.value = getCurrentJourney(
+        journeys.value.filter((journey) => journey.gameId === game.id && journey.deletedAt === null),
+      )?.id ?? null
+    }
+
+    editGame(selectedJourneyGame.value ?? game)
   }
 
   function startCreatingGame() {
@@ -649,6 +647,7 @@ function createBacklogStore() {
 
     try {
       const existing = games.value.find((game) => game.id === gameForm.id)
+      const editedJourneyId = existing ? selectedJourney.value?.id ?? null : null
       const existingPlain = existing ? toPlainGame(existing) : null
       const now = getNextUpdatedAt(existingPlain?.updatedAt)
       const ratingInput = gameForm.rating.trim()
@@ -747,14 +746,34 @@ function createBacklogStore() {
         deletedAt: existingPlain?.deletedAt ?? null,
       }
 
-      await saveGame(game)
-      markLocalChange()
-      if (existing) {
-        updateGameInPlace(game)
+      if (existing && selectedJourney.value) {
+        await saveGameMetadata(game)
+        await saveJourney({
+          ...selectedJourney.value,
+          status: game.status,
+          rating: game.rating,
+          playTimeHours: game.playTimeHours,
+          platform: game.platform,
+          ownershipType: game.ownershipType,
+          priority: game.priority ?? null,
+          review: game.review,
+          finishedAt: game.finishedAt,
+          pausedAt: game.pausedAt,
+          nudgeAt: game.nudgeAt,
+          updatedAt: now,
+        })
       } else {
+        await saveGame(game)
+      }
+      markLocalChange()
+      await loadGames()
+      if (!existing && !games.value.some((candidate) => candidate.id === game.id)) {
         games.value.push(game)
       }
       await selectGame(game.id)
+      if (editedJourneyId) {
+        await selectJourney(editedJourneyId)
+      }
       await unlockEarnedTrophies('user-action')
       editGame(game)
       setFeedback(
@@ -872,8 +891,16 @@ function createBacklogStore() {
     return true
   }
 
-  async function updateGameStatus(game: Game, status: GameStatus) {
-    if (game.status === status) {
+  async function updateCurrentJourneyStatus(game: Game, status: GameStatus) {
+    const journey = getCurrentJourney(
+      journeys.value.filter((candidate) => candidate.gameId === game.id),
+    )
+
+    if (!journey) {
+      return
+    }
+
+    if (journey.status === status) {
       setFeedback(
         translate(settings.language, 'feedback.alreadyStatus', {
           status: getStatusLabel(settings.language, status),
@@ -885,37 +912,36 @@ function createBacklogStore() {
     }
 
     try {
-      const gamePlain = toPlainGame(game)
-      const updatedGame: Game = {
-        ...gamePlain,
+      const updatedJourney: Journey = {
+        ...journey,
         status,
         rating:
-          status === 'finished' || status === 'abandoned' ? game.rating : null,
-        playTimeHours: game.playTimeHours,
-        finishedAt: status === 'finished' ? game.finishedAt ?? getTodayDate() : null,
-        pausedAt: status === 'paused' ? (game.status === 'paused' ? game.pausedAt : null) ?? getTodayDate() : null,
-        nudgeAt: status === 'paused' ? (game.status === 'paused' ? game.nudgeAt : null) ?? addDaysDate(14) : null,
-        updatedAt: getNextUpdatedAt(gamePlain.updatedAt),
+          status === 'finished' || status === 'abandoned' ? journey.rating : null,
+        finishedAt: status === 'finished' ? journey.finishedAt ?? getTodayDate() : null,
+        pausedAt: status === 'paused' ? (journey.status === 'paused' ? journey.pausedAt : null) ?? getTodayDate() : null,
+        nudgeAt: status === 'paused' ? (journey.status === 'paused' ? journey.nudgeAt : null) ?? addDaysDate(14) : null,
+        updatedAt: getNextUpdatedAt(journey.updatedAt),
       }
 
-      await saveGame(updatedGame)
+      await saveJourney(updatedJourney)
       markLocalChange()
-      updateGameInPlace(updatedGame)
-      await selectGame(updatedGame.id)
+      await loadGames()
+      await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
 
-      if (status === 'finished' && game.status !== 'finished') {
+      if (status === 'finished' && journey.status !== 'finished') {
         void fireCompletionConfetti()
       }
 
-      if (gameForm.id === updatedGame.id) {
-        editGame(updatedGame)
+      if (gameForm.id === game.id) {
+        const refreshedGame = games.value.find((candidate) => candidate.id === game.id)
+        if (refreshedGame) editGame(refreshedGame)
       }
 
       setFeedback(
         translate(settings.language, 'feedback.movedToStatus', {
           status: getStatusLabel(settings.language, status),
-          title: updatedGame.title,
+          title: game.title,
         }),
       )
       scheduleAutoSync()
@@ -976,39 +1002,6 @@ function createBacklogStore() {
       }),
     )
     scheduleAutoSync()
-  }
-
-  async function addPlayTime(game: Game, hoursToAdd: number) {
-    try {
-      const gamePlain = toPlainGame(game)
-      const currentTotal = game.playTimeHours ?? 0
-      const newTotal = Math.round((currentTotal + hoursToAdd) * 10) / 10
-      const updatedGame: Game = {
-        ...gamePlain,
-        playTimeHours: newTotal,
-        updatedAt: getNextUpdatedAt(gamePlain.updatedAt),
-      }
-
-      await saveGame(updatedGame)
-      markLocalChange()
-      updateGameInPlace(updatedGame)
-      await selectGame(updatedGame.id)
-      await unlockEarnedTrophies('user-action')
-
-      if (gameForm.id === updatedGame.id) {
-        gameForm.playTimeHours = String(newTotal)
-      }
-
-      setFeedback(
-        translate(settings.language, 'feedback.timeAdded', {
-          hours: hoursToAdd,
-          title: updatedGame.title,
-        }),
-      )
-      scheduleAutoSync()
-    } catch {
-      setFeedback(translate(settings.language, 'feedback.timeAddFailed'), 'error')
-    }
   }
 
   async function addSelectedJourneyPlayTime(hoursToAdd: number) {
@@ -1130,31 +1123,35 @@ function createBacklogStore() {
   }
 
   async function snoozePausedGame(game: Game, days: number) {
-    if (game.status !== 'paused') {
+    const journey = getCurrentJourney(
+      journeys.value.filter((candidate) => candidate.gameId === game.id),
+    )
+
+    if (journey?.status !== 'paused') {
       return
     }
 
     try {
-      const gamePlain = toPlainGame(game)
-      const updatedGame: Game = {
-        ...gamePlain,
+      const updatedJourney: Journey = {
+        ...journey,
         nudgeAt: addDaysDate(days),
-        updatedAt: getNextUpdatedAt(gamePlain.updatedAt),
+        updatedAt: getNextUpdatedAt(journey.updatedAt),
       }
 
-      await saveGame(updatedGame)
+      await saveJourney(updatedJourney)
       markLocalChange()
-      updateGameInPlace(updatedGame)
-      await selectGame(updatedGame.id)
+      await loadGames()
+      await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
 
-      if (gameForm.id === updatedGame.id) {
-        editGame(updatedGame)
+      if (gameForm.id === game.id) {
+        const refreshedGame = games.value.find((candidate) => candidate.id === game.id)
+        if (refreshedGame) editGame(refreshedGame)
       }
 
       setFeedback(
         translate(settings.language, 'feedback.pausedNudgeSnoozed', {
-          title: updatedGame.title,
+          title: game.title,
         }),
       )
       scheduleAutoSync()
@@ -1336,9 +1333,8 @@ function createBacklogStore() {
     trophyUnlockQueue,
     latestTrophyUnlockSource,
     trophyViews,
-    addPlayTime,
     addSelectedJourneyPlayTime,
-    updateGameStatus,
+    updateCurrentJourneyStatus,
     updateSelectedJourneyStatus,
     snoozePausedGame,
     applyReviewDraft,

@@ -72,6 +72,7 @@ async function loadBacklog(opts: { seedGames?: Game[]; seedJourneys?: Journey[] 
     saveGame: vi.fn().mockImplementation(async (game: Game) => {
       savedGames.push(game)
     }),
+    saveGameMetadata: vi.fn().mockResolvedValue(undefined),
     saveJourney: vi.fn().mockImplementation(async (journey: Journey) => {
       const index = savedJourneys.findIndex((candidate) => candidate.id === journey.id)
 
@@ -188,6 +189,28 @@ describe('useBacklog', () => {
       expect(store.gameForm.igdbId).toBe('1234')
       expect(store.gameForm.developer).toBe('Team Cherry')
       expect(store.gameForm.finishedAt).toBe('2026-04-01')
+    })
+
+    it('startEditingGame preserves an explicitly selected historical Journey', async () => {
+      const game = makeGame({ id: 'history', status: 'playing', review: 'Current run' })
+      const historical = makeJourney(game, {
+        id: 'history-first',
+        status: 'finished',
+        review: 'First run',
+        rating: 10,
+        finishedAt: '2025-01-01',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      })
+      const current = makeJourney(game, { id: 'history-current' })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [historical, current] })
+
+      await store.selectGame(game.id)
+      await store.selectJourney(historical.id)
+      store.startEditingGame(game)
+
+      expect(store.selectedJourneyId.value).toBe(historical.id)
+      expect(store.gameForm.status).toBe('finished')
+      expect(store.gameForm.review).toBe('First run')
     })
   })
 
@@ -322,6 +345,30 @@ describe('useBacklog', () => {
       await store.saveCurrentGame()
 
       expect(savedGames[0].igdbId).toBeNull()
+    })
+
+    it('updates only the selected Journey when editing Journey fields', async () => {
+      const game = makeGame({ id: 'edit-history', status: 'playing' })
+      const historical = makeJourney(game, {
+        id: 'edit-history-first',
+        status: 'finished',
+        review: 'Original',
+        finishedAt: '2025-01-01',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      })
+      const current = makeJourney(game, { id: 'edit-history-current' })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [historical, current] })
+
+      await store.selectGame(game.id)
+      await store.selectJourney(historical.id)
+      store.startEditingGame(game)
+      store.gameForm.review = 'Updated original'
+
+      await store.saveCurrentGame()
+
+      expect(savedJourneys.find((journey) => journey.id === historical.id)?.review).toBe('Updated original')
+      expect(savedJourneys.find((journey) => journey.id === current.id)).toEqual(current)
+      expect(store.selectedJourneyId.value).toBe(historical.id)
     })
   })
 

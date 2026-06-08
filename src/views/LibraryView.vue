@@ -18,7 +18,7 @@ const {
   selectedGameId,
   sortOption,
   statusFilter,
-  updateGameStatus,
+  updateCurrentJourneyStatus,
 } = useBacklog()
 
 const hasActiveFilters = computed(
@@ -71,7 +71,7 @@ async function openGame(gameId: string) {
 <template>
   <div class="view-stack">
     <GameLibraryPanel
-      :change-game-status="updateGameStatus"
+      :change-game-status="updateCurrentJourneyStatus"
       :filtered-games="filteredGames"
       :display-status-by-game-id="displayStatusByGameId"
       :finished-year-filter="finishedYearFilter"

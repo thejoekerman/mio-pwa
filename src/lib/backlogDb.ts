@@ -367,6 +367,12 @@ export async function saveGame(game: Game) {
   })
 }
 
+export async function saveGameMetadata(game: Game) {
+  const existingGame = await db.games.get(game.id)
+
+  await db.games.put(projectLegacyGameToCanonical(game, existingGame))
+}
+
 export async function deleteGame(gameId: string) {
   await db.transaction('rw', db.games, db.journeys, db.logs, async () => {
     const now = new Date().toISOString()

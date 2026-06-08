@@ -23,7 +23,7 @@ interface HomeBacklogState {
   shouldShowBackupReminder: Ref<boolean>
   snoozePausedGame: ReturnType<typeof vi.fn>
   trophyViews: Ref<unknown[]>
-  updateGameStatus: ReturnType<typeof vi.fn>
+  updateCurrentJourneyStatus: ReturnType<typeof vi.fn>
 }
 
 function game(overrides: Partial<Game>): Game {
@@ -93,7 +93,7 @@ vi.mock('../composables/useBacklog', async () => {
     shouldShowBackupReminder: ref(false),
     snoozePausedGame: vi.fn(),
     trophyViews: ref([]),
-    updateGameStatus: vi.fn(),
+    updateCurrentJourneyStatus: vi.fn(),
   }
 
   return {

@@ -17,7 +17,7 @@ interface LibraryBacklogState {
   selectedGameId: Ref<string | null>
   sortOption: Ref<GameSortOption>
   statusFilter: Ref<'all' | GameStatus>
-  updateGameStatus: ReturnType<typeof vi.fn>
+  updateCurrentJourneyStatus: ReturnType<typeof vi.fn>
 }
 
 function game(overrides: Partial<Game>): Game {
@@ -92,7 +92,7 @@ vi.mock('../composables/useBacklog', async () => {
     selectedGameId: ref<string | null>(null),
     sortOption,
     statusFilter,
-    updateGameStatus: vi.fn(),
+    updateCurrentJourneyStatus: vi.fn(),
   }
 
   return {

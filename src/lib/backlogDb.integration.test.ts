@@ -14,6 +14,7 @@ import {
   replaceWithSyncSnapshot,
   saveEarnedTrophies,
   saveGame,
+  saveGameMetadata,
   saveJourney,
   saveLogEntry,
   saveLogEntryForJourney,
@@ -164,6 +165,25 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
           rating: null,
           finishedAt: null,
         }),
+      ])
+    })
+
+    it('saveGameMetadata leaves Journey history untouched', async () => {
+      const game = makeGame({ id: 'metadata', status: 'finished', review: 'First run' })
+      await saveGame(game)
+      await saveJourney({
+        ...(await getAllJourneys())[0],
+        id: 'metadata-replay',
+        status: 'playing',
+        review: '',
+      })
+      const journeysBefore = await getAllJourneys()
+
+      await saveGameMetadata({ ...game, title: 'Updated title', tags: ['Updated'] })
+
+      expect(await getAllJourneys()).toEqual(journeysBefore)
+      expect(await getAllGames()).toEqual([
+        expect.objectContaining({ title: 'Updated title', tags: ['Updated'], status: 'playing' }),
       ])
     })
 

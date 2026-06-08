@@ -36,7 +36,7 @@ const {
   shouldShowBackupReminder,
   snoozePausedGame,
   trophyViews,
-  updateGameStatus,
+  updateCurrentJourneyStatus,
 } = useBacklog()
 const { ownershipLabel, t } = useI18n()
 const router = useRouter()
@@ -596,7 +596,7 @@ onBeforeUnmount(() => {
                     type="button"
                     :aria-label="t('home.resumePausedGame')"
                     :title="t('home.resumePausedGame')"
-                    @click="updateGameStatus(game, 'playing')"
+                    @click="updateCurrentJourneyStatus(game, 'playing')"
                   >
                     <svg aria-hidden="true" viewBox="0 0 24 24">
                       <polygon points="8 5 19 12 8 19 8 5" />

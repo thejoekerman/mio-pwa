@@ -378,7 +378,12 @@ async function getWikidataMetadata(itemId: string) {
       </div>
     </div>
 
-    <form class="game-form" novalidate @submit.prevent="emit('save')">
+  <form class="game-form" novalidate @submit.prevent="emit('save')">
+      <div class="form-section-heading">
+        <p class="section-kicker">{{ t('form.gameDetails') }}</p>
+        <p>{{ t('form.gameDetailsHint') }}</p>
+      </div>
+
       <VTextField
         v-model="form.title"
         class="form-control"
@@ -412,6 +417,92 @@ async function getWikidataMetadata(itemId: string) {
             <small>{{ suggestion.description }}</small>
           </button>
         </div>
+      </div>
+
+      <VCombobox
+        class="form-control tag-combobox"
+        chips
+        closable-chips
+        clearable
+        :hint="t('form.tagsHint')"
+        :items="suggestedTagOptions"
+        :label="t('form.tags')"
+        multiple
+        persistent-hint
+        :placeholder="t('form.addOwnTag')"
+        :model-value="selectedTags"
+        @update:model-value="updateTags"
+      />
+
+      <VExpansionPanels class="more-details-panel" variant="accordion">
+        <VExpansionPanel>
+          <VExpansionPanelTitle>{{ t('form.moreDetails') }}</VExpansionPanelTitle>
+          <VExpansionPanelText>
+            <div class="more-details-fields">
+              <VTextField
+                v-if="canUseIgdbMetadata"
+                v-model="form.igdbId"
+                class="form-control"
+                type="text"
+                inputmode="numeric"
+                :hint="t('form.igdbIdHint')"
+                :label="t('form.igdbId')"
+                persistent-hint
+                :placeholder="t('form.igdbIdPlaceholder')"
+              />
+
+              <VTextField
+                v-model="form.coverUrl"
+                class="form-control"
+                type="url"
+                inputmode="url"
+                :hint="t('form.coverUrlHint')"
+                :label="t('form.coverUrl')"
+                persistent-hint
+                :placeholder="t('form.coverUrlPlaceholder')"
+              />
+
+              <div class="split-fields">
+                <VTextField
+                  v-model="form.releaseYear"
+                  class="form-control"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="4"
+                  :hint="t('form.releaseYearHint')"
+                  :label="t('form.releaseYear')"
+                  persistent-hint
+                  :placeholder="t('form.releaseYearPlaceholder')"
+                />
+
+                <VTextField
+                  v-model="form.developer"
+                  class="form-control"
+                  type="text"
+                  :hint="t('form.developerHint')"
+                  :label="t('form.developer')"
+                  persistent-hint
+                  :placeholder="t('form.developerPlaceholder')"
+                />
+
+                <VTextField
+                  v-model="form.publisher"
+                  class="form-control"
+                  type="text"
+                  :hint="t('form.publisherHint')"
+                  :label="t('form.publisher')"
+                  persistent-hint
+                  :placeholder="t('form.publisherPlaceholder')"
+                />
+              </div>
+            </div>
+          </VExpansionPanelText>
+        </VExpansionPanel>
+      </VExpansionPanels>
+
+      <div class="form-section-heading">
+        <p class="section-kicker">{{ t('form.journeyDetails') }}</p>
+        <p>{{ t('form.journeyDetailsHint') }}</p>
       </div>
 
       <div class="split-fields">
@@ -471,6 +562,15 @@ async function getWikidataMetadata(itemId: string) {
           persistent-hint
         />
 
+        <VSelect
+          v-model="form.priority"
+          class="form-control"
+          :hint="t('form.priorityHint')"
+          :items="priorityOptions"
+          :label="t('form.priority')"
+          persistent-hint
+        />
+
         <VTextField
           v-if="form.status === 'finished'"
           v-model="form.finishedAt"
@@ -491,98 +591,6 @@ async function getWikidataMetadata(itemId: string) {
           persistent-hint
         />
       </div>
-
-      <VCombobox
-        class="form-control tag-combobox"
-        chips
-        closable-chips
-        clearable
-        :hint="t('form.tagsHint')"
-        :items="suggestedTagOptions"
-        :label="t('form.tags')"
-        multiple
-        persistent-hint
-        :placeholder="t('form.addOwnTag')"
-        :model-value="selectedTags"
-        @update:model-value="updateTags"
-      />
-
-      <VExpansionPanels class="more-details-panel" variant="accordion">
-        <VExpansionPanel>
-          <VExpansionPanelTitle>{{ t('form.moreDetails') }}</VExpansionPanelTitle>
-          <VExpansionPanelText>
-            <div class="more-details-fields">
-              <VTextField
-                v-if="canUseIgdbMetadata"
-                v-model="form.igdbId"
-                class="form-control"
-                type="text"
-                inputmode="numeric"
-                :hint="t('form.igdbIdHint')"
-                :label="t('form.igdbId')"
-                persistent-hint
-                :placeholder="t('form.igdbIdPlaceholder')"
-              />
-
-              <VTextField
-                v-model="form.coverUrl"
-                class="form-control"
-                type="url"
-                inputmode="url"
-                :hint="t('form.coverUrlHint')"
-                :label="t('form.coverUrl')"
-                persistent-hint
-                :placeholder="t('form.coverUrlPlaceholder')"
-              />
-
-              <div class="split-fields">
-                <VTextField
-                  v-model="form.releaseYear"
-                  class="form-control"
-                  type="text"
-                  inputmode="numeric"
-                  maxlength="4"
-                  :hint="t('form.releaseYearHint')"
-                  :label="t('form.releaseYear')"
-                  persistent-hint
-                  :placeholder="t('form.releaseYearPlaceholder')"
-                />
-
-                <VSelect
-                  v-model="form.priority"
-                  class="form-control"
-                  :hint="t('form.priorityHint')"
-                  :items="priorityOptions"
-                  :label="t('form.priority')"
-                  persistent-hint
-                />
-              </div>
-
-              <div class="split-fields">
-                <VTextField
-                  v-model="form.developer"
-                  class="form-control"
-                  type="text"
-                  :hint="t('form.developerHint')"
-                  :label="t('form.developer')"
-                  persistent-hint
-                  :placeholder="t('form.developerPlaceholder')"
-                />
-
-                <VTextField
-                  v-model="form.publisher"
-                  class="form-control"
-                  type="text"
-                  :hint="t('form.publisherHint')"
-                  :label="t('form.publisher')"
-                  persistent-hint
-                  :placeholder="t('form.publisherPlaceholder')"
-                />
-              </div>
-            </div>
-          </VExpansionPanelText>
-        </VExpansionPanel>
-      </VExpansionPanels>
 
       <VTextarea
         v-if="form.id"
