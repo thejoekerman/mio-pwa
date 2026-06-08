@@ -115,6 +115,7 @@ function makeDeps() {
 
   return {
     games,
+    hasMultipleJourneys: ref(false),
     selectedGameId,
     gameForm,
     isSyncing: ref(false),

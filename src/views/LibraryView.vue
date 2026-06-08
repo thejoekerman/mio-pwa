@@ -7,6 +7,7 @@ import type { GameOwnershipFilter, GameSortOption, GameStatus } from '../types'
 const router = useRouter()
 const {
   filteredGames,
+  displayStatusByGameId,
   finishedYearFilter,
   finishedYearOptions,
   games,
@@ -72,6 +73,7 @@ async function openGame(gameId: string) {
     <GameLibraryPanel
       :change-game-status="updateGameStatus"
       :filtered-games="filteredGames"
+      :display-status-by-game-id="displayStatusByGameId"
       :finished-year-filter="finishedYearFilter"
       :finished-year-options="finishedYearOptions"
       :games-count="games.length"

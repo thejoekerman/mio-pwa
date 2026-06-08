@@ -4,10 +4,12 @@ import {
   ensureDemoData,
   getAllEarnedTrophies,
   getAllGames,
+  getAllJourneys,
   getAllLogs,
   getLogsForGame,
   resetDemoData,
   saveGame,
+  saveJourney,
   saveLogEntry,
 } from '../lib/backlogDb'
 import { translate, getStatusLabel } from '../i18n'
@@ -34,14 +36,17 @@ import {
   isWebGpuAvailable,
 } from '../lib/localReviewModels'
 import { dedupeTags } from '../lib/tags'
+import { getGameDisplayStatus } from '../lib/gameJourneyState'
 import type {
   EarnedTrophy,
   FeedbackState,
   Game,
+  GameDisplayStatus,
   GameFormState,
   GameOwnershipFilter,
   GameSortOption,
   GameStatus,
+  Journey,
   LibraryCsvImportResult,
   LogEntry,
   TrophyUnlockSource,
@@ -59,6 +64,7 @@ function createBacklogStore() {
   } = useSettings()
   const ACTIVE_HOME_STATUSES: GameStatus[] = ['playing', 'ongoing']
   const games = ref<Game[]>([])
+  const journeys = ref<Journey[]>([])
   const selectedGameId = ref<string | null>(null)
   const logs = ref<LogEntry[]>([])
   const allLogs = ref<LogEntry[]>([])
@@ -118,6 +124,31 @@ function createBacklogStore() {
   const selectedGame = computed(
     () => games.value.find((game) => game.id === selectedGameId.value) ?? null,
   )
+  const displayStatusByGameId = computed(
+    () => new Map(
+      games.value.map((game) => [
+        game.id,
+        getGameDisplayStatus(journeys.value.filter((journey) => journey.gameId === game.id))
+          ?? game.status,
+      ]),
+    ),
+  )
+  const selectedGameDisplayStatus = computed<GameDisplayStatus | null>(() =>
+    selectedGame.value
+      ? displayStatusByGameId.value.get(selectedGame.value.id) ?? selectedGame.value.status
+      : null,
+  )
+  const hasMultipleJourneys = computed(() => {
+    const journeyCountByGameId = new Map<string, number>()
+
+    for (const journey of journeys.value) {
+      if (journey.deletedAt === null) {
+        journeyCountByGameId.set(journey.gameId, (journeyCountByGameId.get(journey.gameId) ?? 0) + 1)
+      }
+    }
+
+    return [...journeyCountByGameId.values()].some((count) => count > 1)
+  })
   const canUseServerReviewDraft = computed(() =>
     Boolean(
       selectedGame.value &&
@@ -144,6 +175,9 @@ function createBacklogStore() {
   )
   const isSyncConfigured = computed(() =>
     Boolean(settings.syncApiBaseUrl.trim() && settings.syncToken.trim()),
+  )
+  const canStartReplay = computed(() =>
+    Boolean(selectedGame.value?.status === 'finished' && !isSyncConfigured.value),
   )
 
   const filteredGames = computed(() => {
@@ -437,13 +471,15 @@ function createBacklogStore() {
   }
 
   async function loadGames() {
-    const [allGames, storedLogs, storedTrophies] = await Promise.all([
+    const [allGames, storedJourneys, storedLogs, storedTrophies] = await Promise.all([
       getAllGames(),
+      getAllJourneys(),
       getAllLogs(),
       getAllEarnedTrophies(),
     ])
 
     games.value = allGames
+    journeys.value = storedJourneys
     allLogs.value = storedLogs
     earnedTrophies.value = storedTrophies
     totalPlayLogCount.value = storedLogs.length
@@ -507,6 +543,7 @@ function createBacklogStore() {
   const { ensureSyncConfig, scheduleAutoSync, startAutoSync, testSyncConnection, refreshSyncCapabilities, syncNow } =
     createSyncHandlers({
       games,
+      hasMultipleJourneys,
       selectedGameId,
       gameForm,
       isSyncing,
@@ -863,6 +900,53 @@ function createBacklogStore() {
     }
   }
 
+  async function startReplay(game: Game) {
+    if (isSyncConfigured.value) {
+      setFeedback(translate(settings.language, 'feedback.replaySyncBlocked'), 'error')
+      return false
+    }
+
+    if (game.status !== 'finished') {
+      return false
+    }
+
+    try {
+      const now = getNextUpdatedAt(game.updatedAt)
+      const journey: Journey = {
+        id: createId(),
+        gameId: game.id,
+        status: 'playing',
+        platform: game.platform,
+        ownershipType: game.ownershipType,
+        priority: null,
+        rating: null,
+        review: '',
+        playTimeHours: null,
+        startedAt: getTodayDate(),
+        finishedAt: null,
+        pausedAt: null,
+        nudgeAt: null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+
+      await saveJourney(journey)
+      markLocalChange()
+      await loadGames()
+      await selectGame(game.id)
+      await unlockEarnedTrophies('user-action')
+      setFeedback(translate(settings.language, 'feedback.replayStarted', { title: game.title }))
+      return true
+    } catch {
+      setFeedback(
+        translate(settings.language, 'feedback.replayStartFailed', { title: game.title }),
+        'error',
+      )
+      return false
+    }
+  }
+
   async function exportLibraryCsv() {
     await ensureLoaded()
 
@@ -1028,6 +1112,7 @@ function createBacklogStore() {
 
   return {
     canRateCurrentStatus,
+    canStartReplay,
     canUseReviewDraft,
     canUseLocalReviewDraft,
     currentFocus,
@@ -1036,6 +1121,7 @@ function createBacklogStore() {
     dismissTrophyUnlocks,
     dismissBackupReminder,
     duePausedGames,
+    displayStatusByGameId,
     editGame,
     earnedTrophies,
     earnedTrophyViews,
@@ -1059,6 +1145,7 @@ function createBacklogStore() {
     isSyncConfigured,
     isSyncing,
     isTestingSyncConnection,
+    journeys,
     localReviewProgress,
     logDraft,
     logs,
@@ -1076,6 +1163,7 @@ function createBacklogStore() {
     searchQuery,
     selectGame,
     selectedGame,
+    selectedGameDisplayStatus,
     selectedGameId,
     setFeedback,
     previewLibraryCsvImport,
@@ -1083,6 +1171,7 @@ function createBacklogStore() {
     startAutoSync,
     startCreatingGame,
     startEditingGame,
+    startReplay,
     stats,
     statusFilter,
     shouldShowBackupReminder,

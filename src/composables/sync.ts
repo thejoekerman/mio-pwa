@@ -10,6 +10,7 @@ import type { EarnedTrophy, FeedbackState, Game, GameFormState, SyncSnapshot, Tr
 
 interface SyncDeps {
   games: Ref<Game[]>
+  hasMultipleJourneys: Ref<boolean>
   selectedGameId: Ref<string | null>
   gameForm: GameFormState
   isSyncing: Ref<boolean>
@@ -48,6 +49,7 @@ function snapshotsMatch(local: SyncSnapshot, remote: SyncSnapshot): boolean {
 export function createSyncHandlers(deps: SyncDeps) {
   const {
     games,
+    hasMultipleJourneys,
     selectedGameId,
     gameForm,
     isSyncing,
@@ -83,6 +85,7 @@ export function createSyncHandlers(deps: SyncDeps) {
   function canAttemptSync() {
     return (
       !isDemoMode &&
+      !hasMultipleJourneys.value &&
       settings.syncApiBaseUrl.trim().length > 0 &&
       settings.syncToken.trim().length > 0 &&
       isOnline()
@@ -115,6 +118,11 @@ export function createSyncHandlers(deps: SyncDeps) {
 
   async function performSync(options?: { silentSuccess?: boolean }) {
     await ensureLoaded()
+
+    if (hasMultipleJourneys.value) {
+      throw new Error(translate(settings.language, 'feedback.syncJourneysBlocked'))
+    }
+
     const syncStartedAtRevision = localChangeRevision.value
     const snapshot = await createSyncSnapshot()
     const response = await syncWithBackend(

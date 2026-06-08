@@ -10,6 +10,7 @@ import {
   GAME_SORT_OPTIONS,
   GAME_STATUSES,
   type Game,
+  type GameDisplayStatus,
   type GameOwnershipFilter,
   type GameSortOption,
   type GameStatus,
@@ -29,6 +30,7 @@ const STATUS_FILTER_ORDER: GameStatus[] = [
 const props = defineProps<{
   changeGameStatus: (game: Game, status: GameStatus) => void | Promise<void>
   filteredGames: Game[]
+  displayStatusByGameId: ReadonlyMap<string, GameDisplayStatus>
   finishedYearFilter: 'all' | string
   finishedYearOptions: string[]
   gamesCount: number
@@ -387,7 +389,7 @@ async function handleStatusChange(
                     class="status-pill small"
                     @click.stop
                   >
-                    {{ statusLabel(game.status) }}
+                    {{ statusLabel(displayStatusByGameId.get(game.id) ?? game.status) }}
                   </button>
                 </template>
 

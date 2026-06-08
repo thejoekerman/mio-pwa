@@ -13,6 +13,7 @@ import {
   replaceWithSyncSnapshot,
   saveEarnedTrophies,
   saveGame,
+  saveJourney,
   saveLogEntry,
 } from './backlogDb'
 import type { EarnedTrophy, Game, LogEntry } from '../types'
@@ -117,6 +118,49 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
           gameId: 'celeste',
           rating: 9,
           playTimeHours: 27.5,
+        }),
+      ])
+    })
+
+    it('saveJourney preserves the finished Journey and makes a replay current', async () => {
+      await saveGame(makeGame({
+        id: 'replay',
+        status: 'finished',
+        rating: 10,
+        review: 'First run',
+        finishedAt: '2026-05-01',
+      }))
+
+      await saveJourney({
+        id: 'replay-2',
+        gameId: 'replay',
+        status: 'playing',
+        platform: 'PS5',
+        ownershipType: 'digital',
+        priority: null,
+        rating: null,
+        review: '',
+        playTimeHours: null,
+        startedAt: '2026-06-08',
+        finishedAt: null,
+        pausedAt: null,
+        nudgeAt: null,
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:00.000Z',
+        deletedAt: null,
+      })
+
+      expect(await getAllJourneys()).toEqual([
+        expect.objectContaining({ id: 'replay-2', status: 'playing' }),
+        expect.objectContaining({ id: 'replay:initial-journey', status: 'finished', rating: 10 }),
+      ])
+      expect(await getAllGames()).toEqual([
+        expect.objectContaining({
+          id: 'replay',
+          status: 'playing',
+          platform: 'PS5',
+          rating: null,
+          finishedAt: null,
         }),
       ])
     })

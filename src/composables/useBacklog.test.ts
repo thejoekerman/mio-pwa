@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isProxy, nextTick, reactive } from 'vue'
-import type { Game } from '../types'
+import type { Game, Journey } from '../types'
 
 // `useBacklog` is a module-level singleton (like `useSettings`) with deep ties to
 // IndexedDB, the network, optional WebGPU, and confetti. We mock every external
@@ -30,21 +30,49 @@ function makeGame(overrides: Partial<Game> = {}): Game {
 }
 
 let savedGames: Game[] = []
+let savedJourneys: Journey[] = []
 
-async function loadBacklog(opts: { seedGames?: Game[] } = {}) {
-  const { seedGames = [] } = opts
+function makeJourney(game: Game, overrides: Partial<Journey> = {}): Journey {
+  return {
+    id: `${game.id}:initial-journey`,
+    gameId: game.id,
+    status: game.status,
+    platform: game.platform,
+    ownershipType: game.ownershipType,
+    priority: game.priority ?? null,
+    rating: game.rating,
+    review: game.review,
+    playTimeHours: game.playTimeHours,
+    startedAt: null,
+    finishedAt: game.finishedAt,
+    pausedAt: game.pausedAt,
+    nudgeAt: game.nudgeAt,
+    createdAt: game.createdAt,
+    updatedAt: game.updatedAt,
+    deletedAt: game.deletedAt,
+    ...overrides,
+  }
+}
+
+async function loadBacklog(opts: { seedGames?: Game[]; seedJourneys?: Journey[] } = {}) {
+  const { seedGames = [], seedJourneys = seedGames.map((game) => makeJourney(game)) } = opts
   savedGames = []
+  savedJourneys = [...seedJourneys]
 
   vi.resetModules()
   window.localStorage.clear()
 
   vi.doMock('../lib/backlogDb', () => ({
     getAllGames: vi.fn().mockResolvedValue(seedGames),
+    getAllJourneys: vi.fn().mockImplementation(async () => savedJourneys),
     getAllLogs: vi.fn().mockResolvedValue([]),
     getAllEarnedTrophies: vi.fn().mockResolvedValue([]),
     getLogsForGame: vi.fn().mockResolvedValue([]),
     saveGame: vi.fn().mockImplementation(async (game: Game) => {
       savedGames.push(game)
+    }),
+    saveJourney: vi.fn().mockImplementation(async (journey: Journey) => {
+      savedJourneys.push(journey)
     }),
     deleteGame: vi.fn().mockResolvedValue(undefined),
     saveLogEntry: vi.fn().mockResolvedValue(undefined),
@@ -96,6 +124,7 @@ async function loadBacklog(opts: { seedGames?: Game[] } = {}) {
 describe('useBacklog', () => {
   beforeEach(() => {
     savedGames = []
+    savedJourneys = []
   })
 
   afterEach(() => {
@@ -393,6 +422,54 @@ describe('useBacklog', () => {
 
       expect(store.games.value.some((g) => g.id === 'gx')).toBe(false)
       expect(store.gameForm.id).toBeNull()
+    })
+  })
+
+  describe('startReplay', () => {
+    it('creates a fresh active Journey and derives Replaying without changing the finished Journey', async () => {
+      const game = makeGame({
+        id: 'replay-me',
+        title: 'Replay Me',
+        status: 'finished',
+        platform: 'Switch',
+        ownershipType: 'physical',
+        rating: 10,
+        review: 'First journey.',
+        playTimeHours: 80,
+        finishedAt: '2026-05-01',
+      })
+      const initialJourney = makeJourney(game)
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [initialJourney] })
+
+      await store.startReplay(game)
+
+      expect(savedJourneys).toHaveLength(2)
+      expect(savedJourneys[0]).toEqual(initialJourney)
+      expect(savedJourneys[1]).toMatchObject({
+        gameId: 'replay-me',
+        status: 'playing',
+        platform: 'Switch',
+        ownershipType: 'physical',
+        rating: null,
+        review: '',
+        playTimeHours: null,
+        finishedAt: null,
+      })
+      expect(store.displayStatusByGameId.value.get('replay-me')).toBe('replaying')
+    })
+
+    it('refuses to create a replay while MioServer 2 sync is configured', async () => {
+      const game = makeGame({ id: 'synced', title: 'Synced', status: 'finished' })
+      const store = await loadBacklog({ seedGames: [game] })
+      const { useSettings } = await import('./useSettings')
+      useSettings().settings.syncApiBaseUrl = 'https://server.test'
+      useSettings().settings.syncToken = 'token'
+
+      await store.startReplay(game)
+
+      expect(savedJourneys).toHaveLength(1)
+      expect(store.feedback.value?.tone).toBe('error')
+      expect(store.feedback.value?.message).toMatch(/disconnect sync/i)
     })
   })
 

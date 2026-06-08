@@ -1,6 +1,6 @@
 import { computed } from 'vue'
 import { useSettings } from './composables/useSettings'
-import type { AppLanguage, GameOwnershipFilter, GameOwnershipType, GameSortOption, GameStatus } from './types'
+import type { AppLanguage, GameDisplayStatus, GameOwnershipFilter, GameOwnershipType, GameSortOption } from './types'
 
 /**
  * Extract all nested keys from an object as dot-notation strings.
@@ -38,6 +38,7 @@ const messages = {
       playing: 'Playing',
       ongoing: 'Ongoing',
       finished: 'Finished',
+      replaying: 'Replaying',
       paused: 'Paused',
       abandoned: 'Abandoned',
       all: 'All statuses',
@@ -347,6 +348,8 @@ const messages = {
       selectGameBody: 'Choose a game from the library to start writing short play-session notes.',
       addTimePlaceholder: 'Hours',
       addTimeButton: 'Log time',
+      startReplay: 'Start replay',
+      replaySyncBlocked: 'Replays need MioServer 3. Disconnect sync to start one locally for now.',
     },
     editView: {
       add: 'Add',
@@ -497,6 +500,9 @@ const messages = {
       alreadyStatus: '{title} is already {status}.',
       movedToStatus: '{title} moved to {status}.',
       switchFailed: 'Could not switch {title} to {status}.',
+      replayStarted: 'A new journey through {title} has begun.',
+      replayStartFailed: 'Could not start a replay for {title}.',
+      replaySyncBlocked: 'Disconnect sync before starting a replay. MioServer 2 cannot preserve multiple journeys.',
       pausedNudgeSnoozed: '{title} snoozed for a week.',
       pausedNudgeFailed: 'Could not update that paused nudge.',
       reviewCopied: 'Review copied to clipboard.',
@@ -518,6 +524,7 @@ const messages = {
       syncCompleted: 'Sync complete. {games} games and {logs} logs are now aligned.',
       syncSkippedLocalChanges: 'Sync response skipped because newer local changes are waiting.',
       syncFailed: 'Sync failed. Please check your backend URL and sync token.',
+      syncJourneysBlocked: 'Sync is paused because this library has multiple journeys. MioServer 3 is required.',
       timeAdded: '{hours} h logged for {title}.',
       timeAddFailed: 'Could not log time.',
       reviewDraftApplied: 'Review draft applied.',
@@ -598,6 +605,7 @@ const messages = {
       playing: 'Aktiv',
       ongoing: 'Fortlaufend',
       finished: 'Beendet',
+      replaying: 'Wird erneut gespielt',
       paused: 'Pausiert',
       abandoned: 'Abgebrochen',
       all: 'Alle Status',
@@ -907,6 +915,8 @@ const messages = {
       selectGameBody: 'Wähle ein Spiel aus der Bibliothek, um kurze Notizen zu deinen Sessions zu schreiben.',
       addTimePlaceholder: 'Stunden',
       addTimeButton: 'Zeit eintragen',
+      startReplay: 'Erneut spielen',
+      replaySyncBlocked: 'Replays benötigen MioServer 3. Trenne Sync, um vorerst lokal einen Replay zu starten.',
     },
     editView: {
       add: 'Neu',
@@ -1057,6 +1067,9 @@ const messages = {
       alreadyStatus: '{title} hat bereits den Status {status}.',
       movedToStatus: '{title} wurde zu {status} verschoben.',
       switchFailed: '{title} konnte nicht zu {status} gewechselt werden.',
+      replayStarted: 'Eine neue Reise durch {title} hat begonnen.',
+      replayStartFailed: 'Ein Replay für {title} konnte nicht gestartet werden.',
+      replaySyncBlocked: 'Trenne Sync, bevor du einen Replay startest. MioServer 2 kann mehrere Reisen nicht bewahren.',
       pausedNudgeSnoozed: '{title} um eine Woche verschoben.',
       pausedNudgeFailed: 'Diese Pausen-Erinnerung konnte nicht aktualisiert werden.',
       reviewCopied: 'Review in die Zwischenablage kopiert.',
@@ -1078,6 +1091,7 @@ const messages = {
       syncCompleted: 'Sync abgeschlossen. {games} Spiele und {logs} Logs sind jetzt abgeglichen.',
       syncSkippedLocalChanges: 'Sync-Antwort übersprungen, weil neuere lokale Änderungen warten.',
       syncFailed: 'Sync fehlgeschlagen. Bitte prüfe Backend-URL und Sync-Token.',
+      syncJourneysBlocked: 'Sync ist pausiert, weil diese Bibliothek mehrere Reisen enthält. MioServer 3 wird benötigt.',
       timeAdded: '{hours} h für {title} eingetragen.',
       timeAddFailed: 'Spielzeit konnte nicht eingetragen werden.',
       reviewDraftApplied: 'Review-Entwurf übernommen.',
@@ -1158,6 +1172,7 @@ const messages = {
         playing: 'プレイ中',
         ongoing: '進行中',
         finished: 'クリア済み',
+        replaying: 'リプレイ中',
         paused: '中断中',
         abandoned: '中止',
         all: 'すべてのステータス'
@@ -1461,7 +1476,9 @@ const messages = {
         selectGame: 'ゲームを選択',
         selectGameBody: 'ライブラリからゲームを選んで、短いプレイメモを書き始めましょう。',
         addTimePlaceholder: '時間',
-        addTimeButton: 'プレイ時間を記録'
+        addTimeButton: 'プレイ時間を記録',
+        startReplay: 'リプレイを開始',
+        replaySyncBlocked: 'リプレイにはMioServer 3が必要です。現在は同期を解除するとローカルで開始できます。'
     },
     editView: {
         add: '追加',
@@ -1604,6 +1621,9 @@ const messages = {
         alreadyStatus: '{title}はすでに{status}です。',
         movedToStatus: '{title}を{status}へ変更しました。',
         switchFailed: '{title}を{status}へ変更できませんでした。',
+        replayStarted: '{title}の新しい旅を始めました。',
+        replayStartFailed: '{title}のリプレイを開始できませんでした。',
+        replaySyncBlocked: 'リプレイを開始する前に同期を解除してください。MioServer 2では複数の旅を保持できません。',
         pausedNudgeSnoozed: '{title}を1週間スヌーズしました。',
         pausedNudgeFailed: '中断通知を更新できませんでした。',
         reviewCopied: 'レビューをクリップボードへコピーしました。',
@@ -1625,6 +1645,7 @@ const messages = {
         syncCompleted: '同期完了。{games}本のゲームと{logs}件のログが同期されました。',
         syncSkippedLocalChanges: '新しいローカル変更が保留中のため、同期レスポンスはスキップされました。',
         syncFailed: '同期に失敗しました。バックエンドURLと同期トークンを確認してください。',
+        syncJourneysBlocked: 'このライブラリには複数の旅があるため同期を停止しています。MioServer 3が必要です。',
         timeAdded: '{title}に{hours}時間を記録しました。',
         timeAddFailed: 'プレイ時間を記録できませんでした。',
         reviewDraftApplied: 'レビュー下書きを適用しました。',
@@ -1729,7 +1750,7 @@ export function translate(
   return interpolate(resolveKey(language, key), params)
 }
 
-export function getStatusLabel(language: AppLanguage, status: GameStatus | 'all') {
+export function getStatusLabel(language: AppLanguage, status: GameDisplayStatus | 'all') {
   return translate(language, `status.${status}`)
 }
 
@@ -1763,7 +1784,7 @@ export function useI18n() {
     return translate(settings.language, key, params)
   }
 
-  function statusLabel(status: GameStatus | 'all') {
+  function statusLabel(status: GameDisplayStatus | 'all') {
     return getStatusLabel(settings.language, status)
   }
 

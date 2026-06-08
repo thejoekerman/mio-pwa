@@ -787,6 +787,25 @@ export async function getAllJourneys(includeDeleted = false) {
   return includeDeleted ? journeys : journeys.filter((journey) => journey.deletedAt === null)
 }
 
+export async function getJourneysForGame(gameId: string, includeDeleted = false) {
+  const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
+  const sortedJourneys = journeys.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+
+  return includeDeleted
+    ? sortedJourneys
+    : sortedJourneys.filter((journey) => journey.deletedAt === null)
+}
+
+export async function saveJourney(journey: Journey) {
+  const game = await db.games.get(journey.gameId)
+
+  if (!game) {
+    throw new Error(`Cannot save Journey "${journey.id}" without Game "${journey.gameId}".`)
+  }
+
+  await db.journeys.put(journey)
+}
+
 export async function getAllJourneyLogs(includeDeleted = false) {
   const logs = await db.logs.toArray()
 

@@ -10,6 +10,7 @@ const { t } = useI18n()
 const {
   addPlayTime,
   applyReviewDraft,
+  canStartReplay,
   canUseReviewDraft,
   discardReviewDraft,
   formatDate,
@@ -23,7 +24,9 @@ const {
   saveCurrentLog,
   selectGame,
   selectedGame,
+  selectedGameDisplayStatus,
   setFeedback,
+  startReplay,
   updateLogEntry,
   updateGameStatus,
 } =
@@ -70,6 +73,7 @@ function handleJournalExported() {
       v-if="selectedGame"
       :add-play-time="addPlayTime"
       :can-use-review-draft="canUseReviewDraft"
+      :can-start-replay="canStartReplay"
       :format-date="formatDate"
       :is-drafting-review="isDraftingReview"
       :draft-status="localReviewProgress"
@@ -78,6 +82,7 @@ function handleJournalExported() {
       :logs="logs"
       :review-draft-preview="reviewDraftPreview"
       :selected-game="selectedGame"
+      :selected-game-display-status="selectedGameDisplayStatus"
       @apply-review-draft="applyReviewDraft"
       @discard-review-draft="discardReviewDraft"
       @draft-review="generateReviewDraft"
@@ -88,6 +93,7 @@ function handleJournalExported() {
       @journal-exported="handleJournalExported"
       @save-log="saveCurrentLog"
       @save-log-edit="updateLogEntry"
+      @start-replay="startReplay(selectedGame)"
       @update-log-draft="logDraft = $event"
     />
 

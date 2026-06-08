@@ -10,13 +10,14 @@ import {
 } from '../lib/journalExport'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
 import { getTimeToBeatHours } from '../lib/timeToBeat'
-import { GAME_STATUSES, type Game, type GameStatus, type LogEntry } from '../types'
+import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
 const router = useRouter()
 
 const props = defineProps<{
   addPlayTime: (game: Game, hours: number) => void | Promise<void>
+  canStartReplay: boolean
   canUseReviewDraft: boolean
   formatDate: (value: string) => string
   isDraftingReview: boolean
@@ -25,6 +26,7 @@ const props = defineProps<{
   logs: LogEntry[]
   reviewDraftPreview: string
   selectedGame: Game | null
+  selectedGameDisplayStatus: GameDisplayStatus | null
   changeGameStatus: (game: Game, status: GameStatus) => void | Promise<void>
 }>()
 
@@ -39,6 +41,7 @@ const emit = defineEmits<{
   journalExported: []
   saveLog: []
   saveLogEdit: [logId: string, content: string]
+  startReplay: []
   updateLogDraft: [value: string]
 }>()
 
@@ -291,7 +294,7 @@ function igdbCreditLine(game: Game) {
                   type="button"
                   class="status-pill detail-status-pill"
                 >
-                  {{ statusLabel(selectedGame.status) }}
+                  {{ statusLabel(selectedGameDisplayStatus ?? selectedGame.status) }}
                 </button>
               </template>
 
@@ -305,6 +308,18 @@ function igdbCreditLine(game: Game) {
                 />
               </VList>
             </VMenu>
+
+            <VBtn
+              v-if="selectedGame.status === 'finished'"
+              type="button"
+              variant="outlined"
+              color="primary"
+              :disabled="!canStartReplay"
+              :title="canStartReplay ? t('detail.startReplay') : t('detail.replaySyncBlocked')"
+              @click="emit('startReplay')"
+            >
+              {{ t('detail.startReplay') }}
+            </VBtn>
 
             <VMenu v-model="addTimeMenuOpen" location="bottom center" :close-on-content-click="false" @update:model-value="!$event && (addTimeInput = '')">
               <template #activator="{ props: activatorProps }">

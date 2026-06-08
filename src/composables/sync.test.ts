@@ -136,6 +136,7 @@ function makeDeps(overrides: Partial<Record<string, unknown>> = {}) {
 
   return {
     games,
+    hasMultipleJourneys: ref(false),
     selectedGameId,
     gameForm,
     isSyncing: ref(false),
@@ -170,6 +171,18 @@ describe('createSyncHandlers > syncNow', () => {
       user: { id: 1, email: null, displayName: null },
       capabilities: { reviewDraft: true, igdbMetadata: true },
     })
+  })
+
+  it('blocks MioServer 2 sync when the library contains multiple Journeys', async () => {
+    const deps = makeDeps({ hasMultipleJourneys: ref(true) })
+    const { syncNow } = createSyncHandlers(deps)
+
+    await expect(syncNow()).rejects.toThrow(/MioServer 3 is required/i)
+    expect(syncWithBackendMock).not.toHaveBeenCalled()
+    expect(deps.setFeedback).toHaveBeenCalledWith(
+      expect.stringMatching(/MioServer 3 is required/i),
+      'error',
+    )
   })
 
   describe('snapshot diff', () => {
