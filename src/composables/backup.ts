@@ -2,7 +2,7 @@ import type { Ref } from 'vue'
 import { createBackupData, importBackupData } from '../lib/backlogDb'
 import { translate } from '../i18n'
 import type { AppSettingsState } from './useSettings'
-import type { BackupData, BackupImportMode, EarnedTrophy, FeedbackState, TrophyUnlockSource } from '../types'
+import type { BackupImportMode, EarnedTrophy, FeedbackState, TrophyUnlockSource } from '../types'
 
 interface BackupDeps {
   selectedGameId: Ref<string | null>
@@ -40,7 +40,7 @@ export function createBackupHandlers(deps: BackupDeps) {
     setBackupReminderDismissedAt(new Date().toISOString())
   }
 
-  async function importBackup(payload: BackupData, mode: BackupImportMode) {
+  async function importBackup(payload: unknown, mode: BackupImportMode) {
     const result = await importBackupData(payload, mode)
 
     await ensureLoaded(true)

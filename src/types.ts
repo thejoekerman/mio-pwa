@@ -216,8 +216,9 @@ export type TrophyUnlockSource = 'startup' | 'user-action' | 'import' | 'sync'
 export interface BackupData {
   version: number
   exportedAt: string
-  games: Game[]
-  logs: LogEntry[]
+  games: CanonicalGame[]
+  journeys: Journey[]
+  logs: JourneyLogEntry[]
   earnedTrophies?: EarnedTrophy[]
 }
 

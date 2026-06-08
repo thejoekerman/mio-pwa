@@ -3,7 +3,10 @@ import {
   createBackupData,
   deleteGame,
   getAllEarnedTrophies,
+  getAllCanonicalGames,
   getAllGames,
+  getAllJourneyLogs,
+  getAllJourneys,
   getAllLogs,
   getLogsForGame,
   importBackupData,
@@ -96,6 +99,26 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
         tags: ['Platformer', 'Indie'],
         coverUrl: 'https://example.test/celeste.jpg',
       })
+
+      expect(await getAllCanonicalGames()).toEqual([
+        expect.objectContaining({
+          id: 'celeste',
+          title: 'Celeste',
+          tags: ['Platformer', 'Indie'],
+          cover: {
+            url: 'https://example.test/celeste.jpg',
+            source: { provider: 'manual', pageUrl: null },
+          },
+        }),
+      ])
+      expect(await getAllJourneys()).toEqual([
+        expect.objectContaining({
+          id: 'celeste:initial-journey',
+          gameId: 'celeste',
+          rating: 9,
+          playTimeHours: 27.5,
+        }),
+      ])
     })
 
     it('returns games sorted by updatedAt descending', async () => {
@@ -168,7 +191,10 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       expect(backup.version).toBeGreaterThan(0)
       expect(backup.exportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
       expect(backup.games.map((g) => g.id).sort()).toEqual(['g1', 'g2'])
+      expect(backup.journeys.map((journey) => journey.gameId).sort()).toEqual(['g1', 'g2'])
       expect(backup.logs.map((l) => l.id)).toEqual(['l1'])
+      expect(backup.logs[0]).toHaveProperty('journeyId', 'g1:initial-journey')
+      expect(backup.logs[0]).not.toHaveProperty('gameId')
       expect(backup.earnedTrophies?.map((t) => t.id)).toEqual(['t1'])
     })
 
@@ -203,6 +229,18 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       const logs = await getAllLogs()
       expect(games.map((g) => g.id)).toEqual(['imported'])
       expect(logs.map((l) => l.id)).toEqual(['il'])
+      expect(await getAllJourneys()).toEqual([
+        expect.objectContaining({
+          id: 'imported:initial-journey',
+          gameId: 'imported',
+        }),
+      ])
+      expect(await getAllJourneyLogs()).toEqual([
+        expect.objectContaining({
+          id: 'il',
+          journeyId: 'imported:initial-journey',
+        }),
+      ])
       expect(result).toEqual({ games: 1, logs: 1, earnedTrophies: 0 })
     })
 
@@ -287,6 +325,30 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
 
       const games = await getAllGames()
       expect(games).toHaveLength(1)
+    })
+
+    it('round-trips a canonical 3.0 backup without flattening Journey ownership', async () => {
+      await saveGame(makeGame({ id: 'g1', title: 'Canonical' }))
+      await saveLogEntry(makeLog({ id: 'l1', gameId: 'g1' }))
+      const backup = await createBackupData()
+
+      await importBackupData(backup, 'replace')
+
+      expect(await getAllCanonicalGames()).toEqual(backup.games)
+      expect(await getAllJourneys()).toEqual(backup.journeys)
+      expect(await getAllJourneyLogs()).toEqual(backup.logs)
+    })
+
+    it('rejects orphaned canonical entities before replacing existing data', async () => {
+      await saveGame(makeGame({ id: 'keep', title: 'Keep me' }))
+      const backup = await createBackupData()
+
+      await expect(importBackupData({
+        ...backup,
+        journeys: [{ ...backup.journeys[0], gameId: 'missing' }],
+      }, 'replace')).rejects.toThrow(/no matching game/i)
+
+      expect((await getAllGames()).map((game) => game.id)).toEqual(['keep'])
     })
   })
 

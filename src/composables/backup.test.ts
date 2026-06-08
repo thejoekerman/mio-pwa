@@ -54,6 +54,7 @@ const sampleBackup: BackupData = {
   version: 1,
   exportedAt: '2026-05-28T08:00:00.000Z',
   games: [],
+  journeys: [],
   logs: [],
   earnedTrophies: [],
 }
