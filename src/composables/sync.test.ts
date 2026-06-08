@@ -104,6 +104,7 @@ function makeSettings(overrides: Partial<AppSettingsState> = {}): AppSettingsSta
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: false,
     igdbMetadataAvailable: false,
+    syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
     ...overrides,
@@ -153,6 +154,7 @@ function makeDeps(overrides: Partial<Record<string, unknown>> = {}) {
     setFeedback: vi.fn(),
     setAiReviewDraftAvailable: vi.fn(),
     setIgdbMetadataAvailable: vi.fn(),
+    setSyncApiVersion: vi.fn(),
     setLastSyncedAt: vi.fn(),
     setLastSyncError: vi.fn(),
     ...overrides,
@@ -173,16 +175,29 @@ describe('createSyncHandlers > syncNow', () => {
     })
   })
 
-  it('blocks MioServer 2 sync when the library contains multiple Journeys', async () => {
+  it('blocks v1 sync when the library contains multiple Journeys', async () => {
     const deps = makeDeps({ hasMultipleJourneys: ref(true) })
     const { syncNow } = createSyncHandlers(deps)
 
-    await expect(syncNow()).rejects.toThrow(/MioServer 3 is required/i)
+    await expect(syncNow()).rejects.toThrow(/sync API v2 is required/i)
     expect(syncWithBackendMock).not.toHaveBeenCalled()
     expect(deps.setFeedback).toHaveBeenCalledWith(
-      expect.stringMatching(/MioServer 3 is required/i),
+      expect.stringMatching(/sync API v2 is required/i),
       'error',
     )
+  })
+
+  it('allows v2 sync when the library contains multiple Journeys', async () => {
+    createSyncSnapshotMock.mockResolvedValue(makeSnapshot([]))
+    syncWithBackendMock.mockResolvedValue(makeResponse(makeSnapshot([])))
+    const deps = makeDeps({
+      hasMultipleJourneys: ref(true),
+      settings: makeSettings({ syncApiVersion: 2 }),
+    })
+    const { syncNow } = createSyncHandlers(deps)
+
+    await expect(syncNow({ source: 'auto', silentSuccess: true })).resolves.toBeDefined()
+    expect(syncWithBackendMock).toHaveBeenCalledTimes(1)
   })
 
   describe('snapshot diff', () => {
@@ -312,6 +327,7 @@ describe('createSyncHandlers > syncNow', () => {
       expect(testSyncConnectionMock).toHaveBeenCalledTimes(1)
       expect(deps.setAiReviewDraftAvailable).toHaveBeenCalledWith(true)
       expect(deps.setIgdbMetadataAvailable).toHaveBeenCalledWith(true)
+      expect(deps.setSyncApiVersion).toHaveBeenCalledWith(1)
     })
 
     it('skips the capability refresh on an auto-sync', async () => {
@@ -352,6 +368,20 @@ describe('createSyncHandlers > syncNow', () => {
       await syncNow({ source: 'manual', silentSuccess: true })
 
       expect(deps.setIgdbMetadataAvailable).toHaveBeenCalledWith(true)
+    })
+
+    it('stores the sync API version reported by the server', async () => {
+      const deps = makeDeps({ hasMultipleJourneys: ref(true) })
+      testSyncConnectionMock.mockResolvedValueOnce({
+        version: 2,
+        user: { id: 1, email: null, displayName: null },
+        capabilities: { reviewDraft: true, igdbMetadata: true },
+      })
+      const { refreshSyncCapabilities } = createSyncHandlers(deps)
+
+      await refreshSyncCapabilities()
+
+      expect(deps.setSyncApiVersion).toHaveBeenCalledWith(2)
     })
   })
 

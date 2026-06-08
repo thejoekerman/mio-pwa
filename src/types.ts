@@ -240,6 +240,7 @@ export interface SyncCapabilities {
 }
 
 export interface SyncConnectionResponse {
+  version?: number
   user: SyncUser
   capabilities: SyncCapabilities
 }

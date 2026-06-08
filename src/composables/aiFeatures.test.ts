@@ -4,7 +4,7 @@ import type {
   AppLanguage,
   AppTheme,
   Game,
-  GameFormState,
+  LogEntry,
   LibraryViewMode,
 } from '../types'
 import type { AppSettingsState } from './useSettings'
@@ -12,11 +12,6 @@ import type { AppSettingsState } from './useSettings'
 // Mock the network and the heavy WebLLM-backed local-draft module so the
 // composable's orchestration is testable in isolation. No MioServer or model
 // download involved.
-vi.mock('../lib/backlogDb', () => ({
-  getLogsForGame: vi.fn().mockResolvedValue([]),
-  saveGame: vi.fn().mockResolvedValue(undefined),
-}))
-
 vi.mock('../lib/syncApi', () => ({
   requestReviewDraft: vi.fn(),
 }))
@@ -25,14 +20,11 @@ vi.mock('../lib/localReviewDraft', () => ({
   generateLocalReviewDraft: vi.fn(),
 }))
 
-import { getLogsForGame, saveGame } from '../lib/backlogDb'
 import { requestReviewDraft } from '../lib/syncApi'
 import { generateLocalReviewDraft } from '../lib/localReviewDraft'
 import { createAiHandlers } from './aiFeatures'
 
 const requestReviewDraftMock = requestReviewDraft as unknown as Mock
-const saveGameMock = saveGame as unknown as Mock
-const getLogsForGameMock = getLogsForGame as unknown as Mock
 const generateLocalReviewDraftMock = generateLocalReviewDraft as unknown as Mock
 
 function makeGame(overrides: Partial<Game> = {}): Game {
@@ -72,6 +64,7 @@ function makeSettings(): AppSettingsState {
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: true,
     igdbMetadataAvailable: false,
+    syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
   })
@@ -86,31 +79,10 @@ function makeDeps(overrides: {
 
   const selectedGame = computed(() => game)
   const serverReviewDraftReady = computed(() => serverReady)
-  const gameForm = reactive<GameFormState>({
-    id: game?.id ?? null,
-    title: '',
-    platform: '',
-    ownershipType: '',
-    status: 'backlog',
-    rating: '',
-    playTimeHours: '',
-    review: '',
-    tags: '',
-    finishedAt: '',
-    pausedAt: '',
-    nudgeAt: '',
-    igdbId: '',
-    releaseYear: '',
-    developer: '',
-    publisher: '',
-    coverUrl: '',
-    priority: '',
-  })
-
   return {
     deps: {
       selectedGame,
-      gameForm,
+      logs: ref<LogEntry[]>([]),
       settings,
       serverReviewDraftReady,
       isDraftingReview: ref(false),
@@ -118,11 +90,7 @@ function makeDeps(overrides: {
       localReviewProgress: ref(''),
       setFeedback: vi.fn(),
       ensureSyncConfig: vi.fn(),
-      toPlainGame: (g: Game) => ({ ...g, tags: [...g.tags] }),
-      updateGameInPlace: vi.fn(),
-      selectGame: vi.fn().mockResolvedValue(undefined),
-      editGame: vi.fn(),
-      markLocalChange: vi.fn(),
+      applyReview: vi.fn().mockResolvedValue(undefined),
       scheduleAutoSync: vi.fn(),
     } as Parameters<typeof createAiHandlers>[0],
   }
@@ -131,8 +99,6 @@ function makeDeps(overrides: {
 describe('createAiHandlers', () => {
   beforeEach(() => {
     requestReviewDraftMock.mockReset()
-    saveGameMock.mockReset().mockResolvedValue(undefined)
-    getLogsForGameMock.mockReset().mockResolvedValue([])
     generateLocalReviewDraftMock.mockReset()
     window.localStorage.clear()
   })
@@ -245,12 +211,8 @@ describe('createAiHandlers', () => {
       const { applyReviewDraft } = createAiHandlers(deps)
       await applyReviewDraft()
 
-      expect(saveGameMock).toHaveBeenCalledTimes(1)
-      const persisted = saveGameMock.mock.calls[0][0] as Game
-      expect(persisted.review).toBe('This game changed me.')
+      expect(deps.applyReview).toHaveBeenCalledWith('This game changed me.')
       expect(deps.reviewDraftPreview.value).toBe('')
-      expect(deps.updateGameInPlace).toHaveBeenCalled()
-      expect(deps.markLocalChange).toHaveBeenCalledTimes(1)
       expect(deps.scheduleAutoSync).toHaveBeenCalledTimes(1)
     })
 
@@ -261,8 +223,7 @@ describe('createAiHandlers', () => {
       const { applyReviewDraft } = createAiHandlers(deps)
       await applyReviewDraft()
 
-      expect(saveGameMock).not.toHaveBeenCalled()
-      expect(deps.markLocalChange).not.toHaveBeenCalled()
+      expect(deps.applyReview).not.toHaveBeenCalled()
     })
 
     it('is a no-op when the preview is blank/whitespace', async () => {
@@ -272,7 +233,7 @@ describe('createAiHandlers', () => {
       const { applyReviewDraft } = createAiHandlers(deps)
       await applyReviewDraft()
 
-      expect(saveGameMock).not.toHaveBeenCalled()
+      expect(deps.applyReview).not.toHaveBeenCalled()
     })
   })
 

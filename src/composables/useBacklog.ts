@@ -7,10 +7,11 @@ import {
   getAllJourneys,
   getAllLogs,
   getLogsForGame,
+  getLogsForJourney,
   resetDemoData,
   saveGame,
   saveJourney,
-  saveLogEntry,
+  saveLogEntryForJourney,
 } from '../lib/backlogDb'
 import { translate, getStatusLabel } from '../i18n'
 import { useSettings } from './useSettings'
@@ -36,7 +37,7 @@ import {
   isWebGpuAvailable,
 } from '../lib/localReviewModels'
 import { dedupeTags } from '../lib/tags'
-import { getGameDisplayStatus } from '../lib/gameJourneyState'
+import { getCurrentJourney, getGameDisplayStatus } from '../lib/gameJourneyState'
 import type {
   EarnedTrophy,
   FeedbackState,
@@ -58,6 +59,7 @@ function createBacklogStore() {
     setAiReviewDraftAvailable,
     setBackupReminderDismissedAt,
     setIgdbMetadataAvailable,
+    setSyncApiVersion,
     setLastBackupExportedAt,
     setLastSyncError,
     setLastSyncedAt,
@@ -66,6 +68,7 @@ function createBacklogStore() {
   const games = ref<Game[]>([])
   const journeys = ref<Journey[]>([])
   const selectedGameId = ref<string | null>(null)
+  const selectedJourneyId = ref<string | null>(null)
   const logs = ref<LogEntry[]>([])
   const allLogs = ref<LogEntry[]>([])
   const earnedTrophies = ref<EarnedTrophy[]>([])
@@ -124,6 +127,36 @@ function createBacklogStore() {
   const selectedGame = computed(
     () => games.value.find((game) => game.id === selectedGameId.value) ?? null,
   )
+  const selectedGameJourneys = computed(() =>
+    journeys.value
+      .filter((journey) => journey.gameId === selectedGameId.value && journey.deletedAt === null)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+  )
+  const selectedJourney = computed(() =>
+    selectedGameJourneys.value.find((journey) => journey.id === selectedJourneyId.value)
+      ?? getCurrentJourney(selectedGameJourneys.value),
+  )
+  const selectedJourneyGame = computed(() => {
+    const game = selectedGame.value
+    const journey = selectedJourney.value
+
+    return game && journey
+      ? {
+          ...game,
+          status: journey.status,
+          rating: journey.rating,
+          playTimeHours: journey.playTimeHours,
+          review: journey.review,
+          platform: journey.platform,
+          ownershipType: journey.ownershipType,
+          priority: journey.priority,
+          finishedAt: journey.finishedAt,
+          pausedAt: journey.pausedAt,
+          nudgeAt: journey.nudgeAt,
+          updatedAt: journey.updatedAt > game.updatedAt ? journey.updatedAt : game.updatedAt,
+        }
+      : game
+  })
   const displayStatusByGameId = computed(
     () => new Map(
       games.value.map((game) => [
@@ -138,6 +171,14 @@ function createBacklogStore() {
       ? displayStatusByGameId.value.get(selectedGame.value.id) ?? selectedGame.value.status
       : null,
   )
+  const selectedJourneyDisplayStatus = computed<GameDisplayStatus | null>(() => {
+    const journey = selectedJourney.value
+    const currentJourney = getCurrentJourney(selectedGameJourneys.value)
+
+    return journey?.id === currentJourney?.id
+      ? selectedGameDisplayStatus.value
+      : journey?.status ?? null
+  })
   const hasMultipleJourneys = computed(() => {
     const journeyCountByGameId = new Map<string, number>()
 
@@ -177,7 +218,7 @@ function createBacklogStore() {
     Boolean(settings.syncApiBaseUrl.trim() && settings.syncToken.trim()),
   )
   const canStartReplay = computed(() =>
-    Boolean(selectedGame.value?.status === 'finished' && !isSyncConfigured.value),
+    selectedJourney.value?.status === 'finished',
   )
 
   const filteredGames = computed(() => {
@@ -502,7 +543,9 @@ function createBacklogStore() {
       return
     }
 
-    logs.value = await getLogsForGame(gameId)
+    logs.value = selectedJourney.value
+      ? await getLogsForJourney(selectedJourney.value.id)
+      : await getLogsForGame(gameId)
   }
 
   async function ensureLoaded(force = false) {
@@ -530,8 +573,25 @@ function createBacklogStore() {
 
   async function selectGame(gameId: string | null) {
     selectedGameId.value = gameId
+    selectedJourneyId.value = getCurrentJourney(
+      journeys.value.filter((journey) => journey.gameId === gameId && journey.deletedAt === null),
+    )?.id ?? null
     reviewDraftPreview.value = ''
     await loadLogs(gameId)
+  }
+
+  async function selectJourney(journeyId: string) {
+    const journey = journeys.value.find(
+      (candidate) => candidate.id === journeyId && candidate.gameId === selectedGameId.value,
+    )
+
+    if (!journey) {
+      return
+    }
+
+    selectedJourneyId.value = journey.id
+    reviewDraftPreview.value = ''
+    await loadLogs(journey.gameId)
   }
 
   // Forward declaration, assigned once below to break a circular dependency with the
@@ -559,6 +619,7 @@ function createBacklogStore() {
       resetForm,
       setFeedback,
       setAiReviewDraftAvailable,
+      setSyncApiVersion,
       setIgdbMetadataAvailable,
       setLastSyncedAt,
       setLastSyncError,
@@ -726,10 +787,11 @@ function createBacklogStore() {
   }
 
   async function saveCurrentLog() {
-    const currentGame = selectedGame.value
+    const currentGame = selectedJourneyGame.value
+    const currentJourney = selectedJourney.value
     const content = logDraft.value.trim()
 
-    if (!currentGame || !content) {
+    if (!currentGame || !currentJourney || !content) {
       return
     }
 
@@ -744,16 +806,16 @@ function createBacklogStore() {
       deletedAt: null,
     }
 
-    await saveLogEntry(logEntry)
-    const updatedGame = {
-      ...currentGamePlain,
+    await saveLogEntryForJourney(logEntry, currentJourney.id)
+    const updatedJourney = {
+      ...currentJourney,
       updatedAt: now,
     }
-    await saveGame(updatedGame)
+    await saveJourney(updatedJourney)
     markLocalChange()
 
     logDraft.value = ''
-    updateGameInPlace(updatedGame)
+    await loadGames()
     allLogs.value = [...allLogs.value, logEntry]
     totalPlayLogCount.value = allLogs.value.length
     await loadLogs(currentGame.id)
@@ -763,11 +825,12 @@ function createBacklogStore() {
   }
 
   async function updateLogEntry(logId: string, content: string) {
-    const currentGame = selectedGame.value
+    const currentGame = selectedJourneyGame.value
+    const currentJourney = selectedJourney.value
     const trimmedContent = content.trim()
     const existingLog = logs.value.find((logEntry) => logEntry.id === logId)
 
-    if (!currentGame || !existingLog || existingLog.gameId !== currentGame.id || !trimmedContent) {
+    if (!currentGame || !currentJourney || !existingLog || existingLog.gameId !== currentGame.id || !trimmedContent) {
       return false
     }
 
@@ -792,15 +855,15 @@ function createBacklogStore() {
       deletedAt: existingLog.deletedAt ?? null,
     }
 
-    await saveLogEntry(updatedLogEntry)
-    const updatedGame = {
-      ...currentGamePlain,
+    await saveLogEntryForJourney(updatedLogEntry, currentJourney.id)
+    const updatedJourney = {
+      ...currentJourney,
       updatedAt: now,
     }
-    await saveGame(updatedGame)
+    await saveJourney(updatedJourney)
     markLocalChange()
 
-    updateGameInPlace(updatedGame)
+    await loadGames()
     await loadLogs(currentGame.id)
     await unlockEarnedTrophies('user-action')
     setFeedback(translate(settings.language, 'feedback.logUpdated'))
@@ -867,6 +930,54 @@ function createBacklogStore() {
     }
   }
 
+  async function updateSelectedJourneyStatus(status: GameStatus) {
+    const game = selectedGame.value
+    const journey = selectedJourney.value
+
+    if (!game || !journey) {
+      return
+    }
+
+    if (journey.status === status) {
+      setFeedback(
+        translate(settings.language, 'feedback.alreadyStatus', {
+          status: getStatusLabel(settings.language, status),
+          title: game.title,
+        }),
+        'info',
+      )
+      return
+    }
+
+    const updatedJourney: Journey = {
+      ...journey,
+      status,
+      rating: status === 'finished' || status === 'abandoned' ? journey.rating : null,
+      finishedAt: status === 'finished' ? journey.finishedAt ?? getTodayDate() : null,
+      pausedAt: status === 'paused' ? journey.pausedAt ?? getTodayDate() : null,
+      nudgeAt: status === 'paused' ? journey.nudgeAt ?? addDaysDate(14) : null,
+      updatedAt: getNextUpdatedAt(journey.updatedAt),
+    }
+
+    await saveJourney(updatedJourney)
+    markLocalChange()
+    await loadGames()
+    await selectJourney(updatedJourney.id)
+    await unlockEarnedTrophies('user-action')
+
+    if (status === 'finished' && journey.status !== 'finished') {
+      void fireCompletionConfetti()
+    }
+
+    setFeedback(
+      translate(settings.language, 'feedback.movedToStatus', {
+        status: getStatusLabel(settings.language, status),
+        title: game.title,
+      }),
+    )
+    scheduleAutoSync()
+  }
+
   async function addPlayTime(game: Game, hoursToAdd: number) {
     try {
       const gamePlain = toPlainGame(game)
@@ -900,13 +1011,36 @@ function createBacklogStore() {
     }
   }
 
-  async function startReplay(game: Game) {
-    if (isSyncConfigured.value) {
-      setFeedback(translate(settings.language, 'feedback.replaySyncBlocked'), 'error')
-      return false
+  async function addSelectedJourneyPlayTime(hoursToAdd: number) {
+    const journey = selectedJourney.value
+    const game = selectedGame.value
+
+    if (!journey || !game) {
+      return
     }
 
-    if (game.status !== 'finished') {
+    const newTotal = Math.round(((journey.playTimeHours ?? 0) + hoursToAdd) * 10) / 10
+    const updatedJourney = {
+      ...journey,
+      playTimeHours: newTotal,
+      updatedAt: getNextUpdatedAt(journey.updatedAt),
+    }
+
+    await saveJourney(updatedJourney)
+    markLocalChange()
+    await loadGames()
+    await selectJourney(updatedJourney.id)
+    setFeedback(
+      translate(settings.language, 'feedback.timeAdded', {
+        hours: hoursToAdd,
+        title: game.title,
+      }),
+    )
+    scheduleAutoSync()
+  }
+
+  async function startReplay(game: Game) {
+    if (selectedJourney.value?.status !== 'finished') {
       return false
     }
 
@@ -1036,6 +1170,26 @@ function createBacklogStore() {
     }).format(new Date(value))
   }
 
+  async function applySelectedJourneyReview(review: string) {
+    const journey = selectedJourney.value
+
+    if (!journey) {
+      return
+    }
+
+    const updatedJourney = {
+      ...journey,
+      review,
+      updatedAt: getNextUpdatedAt(journey.updatedAt),
+    }
+
+    await saveJourney(updatedJourney)
+    markLocalChange()
+    await loadGames()
+    await selectJourney(updatedJourney.id)
+    scheduleAutoSync()
+  }
+
   const { exportBackup, dismissBackupReminder, importBackup } = createBackupHandlers({
     selectedGameId,
     settings,
@@ -1049,8 +1203,8 @@ function createBacklogStore() {
 
   const { generateReviewDraft, applyReviewDraft, discardReviewDraft } =
     createAiHandlers({
-      selectedGame,
-      gameForm,
+      selectedGame: selectedJourneyGame,
+      logs,
       settings,
       serverReviewDraftReady: canUseServerReviewDraft,
       isDraftingReview,
@@ -1058,11 +1212,7 @@ function createBacklogStore() {
       localReviewProgress,
       setFeedback,
       ensureSyncConfig,
-      toPlainGame,
-      updateGameInPlace,
-      selectGame,
-      editGame,
-      markLocalChange,
+      applyReview: applySelectedJourneyReview,
       scheduleAutoSync,
     })
 
@@ -1162,9 +1312,15 @@ function createBacklogStore() {
     updateLogEntry,
     searchQuery,
     selectGame,
+    selectJourney,
     selectedGame,
+    selectedGameJourneys,
     selectedGameDisplayStatus,
     selectedGameId,
+    selectedJourney,
+    selectedJourneyDisplayStatus,
+    selectedJourneyGame,
+    selectedJourneyId,
     setFeedback,
     previewLibraryCsvImport,
     sortOption,
@@ -1181,7 +1337,9 @@ function createBacklogStore() {
     latestTrophyUnlockSource,
     trophyViews,
     addPlayTime,
+    addSelectedJourneyPlayTime,
     updateGameStatus,
+    updateSelectedJourneyStatus,
     snoozePausedGame,
     applyReviewDraft,
   }

@@ -10,13 +10,13 @@ import {
 } from '../lib/journalExport'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
 import { getTimeToBeatHours } from '../lib/timeToBeat'
-import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type LogEntry } from '../types'
+import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type Journey, type LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
 const router = useRouter()
 
 const props = defineProps<{
-  addPlayTime: (game: Game, hours: number) => void | Promise<void>
+  addPlayTime: (hours: number) => void | Promise<void>
   canStartReplay: boolean
   canUseReviewDraft: boolean
   formatDate: (value: string) => string
@@ -26,8 +26,11 @@ const props = defineProps<{
   logs: LogEntry[]
   reviewDraftPreview: string
   selectedGame: Game | null
+  selectedJourney: Journey | null
+  selectedJourneyId: string | null
+  journeys: Journey[]
   selectedGameDisplayStatus: GameDisplayStatus | null
-  changeGameStatus: (game: Game, status: GameStatus) => void | Promise<void>
+  changeGameStatus: (status: GameStatus) => void | Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -41,6 +44,7 @@ const emit = defineEmits<{
   journalExported: []
   saveLog: []
   saveLogEdit: [logId: string, content: string]
+  selectJourney: [journeyId: string]
   startReplay: []
   updateLogDraft: [value: string]
 }>()
@@ -55,7 +59,7 @@ const canAddTime = computed(() => parsedAddTime.value !== null)
 
 async function handleAddTime() {
   if (!props.selectedGame || parsedAddTime.value === null) return
-  await props.addPlayTime(props.selectedGame, parsedAddTime.value)
+  await props.addPlayTime(parsedAddTime.value)
   addTimeInput.value = ''
   addTimeMenuOpen.value = false
 }
@@ -223,8 +227,26 @@ function formatTimeToBeat(game: Game) {
   return hours === null ? null : `~${hours} h`
 }
 
-async function handleStatusChange(game: Game, status: GameStatus) {
-  await props.changeGameStatus(game, status)
+async function handleStatusChange(status: GameStatus) {
+  await props.changeGameStatus(status)
+}
+
+function journeyTitle(index: number) {
+  return t('detail.journeyNumber', { number: props.journeys.length - index })
+}
+
+function selectedJourneyTitle() {
+  const index = props.journeys.findIndex((journey) => journey.id === props.selectedJourneyId)
+
+  return index === -1 ? t('detail.journeyNumber', { number: 1 }) : journeyTitle(index)
+}
+
+function journeyDate(journey: Journey) {
+  return journey.finishedAt ?? journey.startedAt ?? journey.createdAt.slice(0, 10)
+}
+
+function journeySubtitle(journey: Journey) {
+  return `${statusLabel(journey.status)} · ${journeyDate(journey)} · ${journey.platform || t('detail.anywhere')}`
 }
 
 function igdbCreditLine(game: Game) {
@@ -287,6 +309,32 @@ function igdbCreditLine(game: Game) {
         <div class="detail-hero-copy">
           <h2>{{ selectedGame.title }}</h2>
           <div class="detail-hero-control-row">
+            <VMenu v-if="journeys.length > 1" location="bottom start">
+              <template #activator="{ props: activatorProps }">
+                <button
+                  v-bind="activatorProps"
+                  type="button"
+                  class="detail-journey-select"
+                >
+                  {{ selectedJourneyTitle() }}
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="m8 10 4 4 4-4" />
+                  </svg>
+                </button>
+              </template>
+
+              <VList class="detail-journey-list" density="compact">
+                <VListItem
+                  v-for="(journey, index) in journeys"
+                  :key="journey.id"
+                  :active="journey.id === selectedJourneyId"
+                  :title="journeyTitle(index)"
+                  :subtitle="journeySubtitle(journey)"
+                  @click="emit('selectJourney', journey.id)"
+                />
+              </VList>
+            </VMenu>
+
             <VMenu location="bottom start">
               <template #activator="{ props: activatorProps }">
                 <button
@@ -302,15 +350,15 @@ function igdbCreditLine(game: Game) {
                 <VListItem
                   v-for="status in GAME_STATUSES"
                   :key="status"
-                  :active="selectedGame.status === status"
+                  :active="selectedJourney?.status === status"
                   :title="statusLabel(status)"
-                  @click="handleStatusChange(selectedGame, status)"
+                  @click="handleStatusChange(status)"
                 />
               </VList>
             </VMenu>
 
             <VBtn
-              v-if="selectedGame.status === 'finished'"
+              v-if="selectedJourney?.status === 'finished'"
               type="button"
               variant="outlined"
               color="primary"

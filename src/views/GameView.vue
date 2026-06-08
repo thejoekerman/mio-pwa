@@ -8,7 +8,7 @@ import { useI18n } from '../i18n'
 const route = useRoute()
 const { t } = useI18n()
 const {
-  addPlayTime,
+  addSelectedJourneyPlayTime,
   applyReviewDraft,
   canStartReplay,
   canUseReviewDraft,
@@ -23,12 +23,17 @@ const {
   reviewDraftPreview,
   saveCurrentLog,
   selectGame,
+  selectJourney,
   selectedGame,
-  selectedGameDisplayStatus,
+  selectedGameJourneys,
+  selectedJourney,
+  selectedJourneyDisplayStatus,
+  selectedJourneyGame,
+  selectedJourneyId,
   setFeedback,
   startReplay,
   updateLogEntry,
-  updateGameStatus,
+  updateSelectedJourneyStatus,
 } =
   useBacklog()
 
@@ -71,18 +76,21 @@ function handleJournalExported() {
   <div class="view-stack">
     <GameDetailPanel
       v-if="selectedGame"
-      :add-play-time="addPlayTime"
+      :add-play-time="addSelectedJourneyPlayTime"
       :can-use-review-draft="canUseReviewDraft"
       :can-start-replay="canStartReplay"
       :format-date="formatDate"
       :is-drafting-review="isDraftingReview"
       :draft-status="localReviewProgress"
-      :change-game-status="updateGameStatus"
+      :change-game-status="updateSelectedJourneyStatus"
       :log-draft="logDraft"
       :logs="logs"
       :review-draft-preview="reviewDraftPreview"
-      :selected-game="selectedGame"
-      :selected-game-display-status="selectedGameDisplayStatus"
+      :selected-game="selectedJourneyGame"
+      :selected-journey="selectedJourney"
+      :selected-journey-id="selectedJourneyId"
+      :journeys="selectedGameJourneys"
+      :selected-game-display-status="selectedJourneyDisplayStatus"
       @apply-review-draft="applyReviewDraft"
       @discard-review-draft="discardReviewDraft"
       @draft-review="generateReviewDraft"
@@ -93,6 +101,7 @@ function handleJournalExported() {
       @journal-exported="handleJournalExported"
       @save-log="saveCurrentLog"
       @save-log-edit="updateLogEntry"
+      @select-journey="selectJourney"
       @start-replay="startReplay(selectedGame)"
       @update-log-draft="logDraft = $event"
     />

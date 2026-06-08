@@ -9,12 +9,14 @@ import {
   getAllJourneys,
   getAllLogs,
   getLogsForGame,
+  getLogsForJourney,
   importBackupData,
   replaceWithSyncSnapshot,
   saveEarnedTrophies,
   saveGame,
   saveJourney,
   saveLogEntry,
+  saveLogEntryForJourney,
 } from './backlogDb'
 import type { EarnedTrophy, Game, LogEntry } from '../types'
 
@@ -220,6 +222,25 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       const logs = await getLogsForGame('g1')
       const ids = logs.map((log) => log.id)
       expect(ids).toEqual(['l2', 'l1'])
+    })
+
+    it('keeps logs separated by Journey', async () => {
+      await saveGame(makeGame({ id: 'replay', status: 'finished' }))
+      await saveJourney({
+        ...(await getAllJourneys())[0],
+        id: 'replay-2',
+        status: 'playing',
+        startedAt: '2026-06-08',
+        finishedAt: null,
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:00.000Z',
+      })
+
+      await saveLogEntryForJourney(makeLog({ id: 'first-run', gameId: 'replay' }), 'replay:initial-journey')
+      await saveLogEntryForJourney(makeLog({ id: 'replay-run', gameId: 'replay' }), 'replay-2')
+
+      expect((await getLogsForJourney('replay:initial-journey')).map((log) => log.id)).toEqual(['first-run'])
+      expect((await getLogsForJourney('replay-2')).map((log) => log.id)).toEqual(['replay-run'])
     })
   })
 

@@ -84,6 +84,7 @@ function makeSettings(): AppSettingsState {
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: false,
     igdbMetadataAvailable: false,
+    syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
   })
@@ -132,6 +133,7 @@ function makeDeps() {
     setFeedback: vi.fn(),
     setAiReviewDraftAvailable: vi.fn(),
     setIgdbMetadataAvailable: vi.fn(),
+    setSyncApiVersion: vi.fn(),
     setLastSyncedAt: vi.fn(),
     setLastSyncError: vi.fn(),
   } as Parameters<typeof createSyncHandlers>[0]

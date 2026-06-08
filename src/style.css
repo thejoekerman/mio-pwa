@@ -2923,6 +2923,45 @@ textarea:focus {
   align-items: end;
 }
 
+.detail-journey-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  width: fit-content;
+  padding: 0 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.detail-journey-select:hover {
+  border-color: var(--panel-accent-border);
+  background: var(--panel-accent);
+}
+
+.detail-journey-select svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.detail-journey-list {
+  min-width: min(310px, calc(100vw - 32px));
+}
+
+.detail-journey-list .v-list-item-subtitle {
+  color: var(--muted);
+  opacity: 1;
+}
+
 .detail-cover-rail {
   display: grid;
   gap: 12px;

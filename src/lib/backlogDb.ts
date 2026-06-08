@@ -425,6 +425,28 @@ export async function getLogsForGame(gameId: string) {
     .reverse()
 }
 
+export async function getLogsForJourney(journeyId: string) {
+  const journey = await db.journeys.get(journeyId)
+
+  if (!journey) {
+    return []
+  }
+
+  const logs = await db.logs.where('journeyId').equals(journeyId).sortBy('createdAt')
+
+  return logs
+    .filter((logEntry) => logEntry.deletedAt === null)
+    .map((logEntry) => ({
+      id: logEntry.id,
+      gameId: journey.gameId,
+      content: logEntry.content,
+      createdAt: logEntry.createdAt,
+      updatedAt: logEntry.updatedAt,
+      deletedAt: logEntry.deletedAt,
+    }))
+    .reverse()
+}
+
 export async function saveLogEntry(logEntry: LogEntry) {
   const journeys = await db.journeys.where('gameId').equals(logEntry.gameId).toArray()
   const currentJourney = getCurrentJourney(journeys)
@@ -436,6 +458,23 @@ export async function saveLogEntry(logEntry: LogEntry) {
   await db.logs.put({
     id: logEntry.id,
     journeyId: currentJourney.id,
+    content: logEntry.content,
+    createdAt: logEntry.createdAt,
+    updatedAt: logEntry.updatedAt,
+    deletedAt: logEntry.deletedAt,
+  })
+}
+
+export async function saveLogEntryForJourney(logEntry: LogEntry, journeyId: string) {
+  const journey = await db.journeys.get(journeyId)
+
+  if (!journey || journey.gameId !== logEntry.gameId) {
+    throw new Error(`Cannot save log "${logEntry.id}" without matching Journey "${journeyId}".`)
+  }
+
+  await db.logs.put({
+    id: logEntry.id,
+    journeyId,
     content: logEntry.content,
     createdAt: logEntry.createdAt,
     updatedAt: logEntry.updatedAt,

@@ -1,5 +1,4 @@
 import type { ComputedRef, Ref } from 'vue'
-import { getLogsForGame, saveGame } from '../lib/backlogDb'
 import { requestReviewDraft } from '../lib/syncApi'
 import {
   clearLocalDraftPending,
@@ -11,13 +10,12 @@ import {
 } from '../lib/localReviewModels'
 import { translate } from '../i18n'
 import { getSyncErrorMessage } from '../lib/syncUtils'
-import { getNextUpdatedAt } from '../lib/dateUtils'
 import type { AppSettingsState } from './useSettings'
-import type { FeedbackState, Game, GameFormState } from '../types'
+import type { FeedbackState, Game, LogEntry } from '../types'
 
 interface AiFeaturesDeps {
   selectedGame: ComputedRef<Game | null>
-  gameForm: GameFormState
+  logs: Ref<LogEntry[]>
   settings: AppSettingsState
   serverReviewDraftReady: ComputedRef<boolean>
   isDraftingReview: Ref<boolean>
@@ -25,18 +23,14 @@ interface AiFeaturesDeps {
   localReviewProgress: Ref<string>
   setFeedback: (message: string, tone?: FeedbackState['tone']) => void
   ensureSyncConfig: () => void
-  toPlainGame: (game: Game) => Game
-  updateGameInPlace: (game: Game) => void
-  selectGame: (gameId: string | null) => Promise<void>
-  editGame: (game: Game) => void
-  markLocalChange: () => void
+  applyReview: (review: string) => Promise<void>
   scheduleAutoSync: () => void
 }
 
 export function createAiHandlers(deps: AiFeaturesDeps) {
   const {
     selectedGame,
-    gameForm,
+    logs,
     settings,
     serverReviewDraftReady,
     isDraftingReview,
@@ -44,11 +38,7 @@ export function createAiHandlers(deps: AiFeaturesDeps) {
     localReviewProgress,
     setFeedback,
     ensureSyncConfig,
-    toPlainGame,
-    updateGameInPlace,
-    selectGame,
-    editGame,
-    markLocalChange,
+    applyReview,
     scheduleAutoSync,
   } = deps
 
@@ -104,10 +94,9 @@ export function createAiHandlers(deps: AiFeaturesDeps) {
 
     try {
       const { generateLocalReviewDraft } = await import('../lib/localReviewDraft')
-      const logs = await getLogsForGame(currentGame.id)
       const draft = await generateLocalReviewDraft({
         game: currentGame,
-        logs,
+        logs: logs.value,
         language: settings.language,
         modelId,
         onProgress: (progress) => {
@@ -154,22 +143,8 @@ export function createAiHandlers(deps: AiFeaturesDeps) {
       return
     }
 
-    const currentGamePlain = toPlainGame(currentGame)
-    const updatedGame: Game = {
-      ...currentGamePlain,
-      review: draft,
-      updatedAt: getNextUpdatedAt(currentGamePlain.updatedAt),
-    }
-
-    await saveGame(updatedGame)
-    markLocalChange()
+    await applyReview(draft)
     reviewDraftPreview.value = ''
-    updateGameInPlace(updatedGame)
-    await selectGame(updatedGame.id)
-
-    if (gameForm.id === updatedGame.id) {
-      editGame(updatedGame)
-    }
 
     setFeedback(translate(settings.language, 'feedback.reviewDraftApplied'))
     scheduleAutoSync()

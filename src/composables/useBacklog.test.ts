@@ -68,14 +68,22 @@ async function loadBacklog(opts: { seedGames?: Game[]; seedJourneys?: Journey[] 
     getAllLogs: vi.fn().mockResolvedValue([]),
     getAllEarnedTrophies: vi.fn().mockResolvedValue([]),
     getLogsForGame: vi.fn().mockResolvedValue([]),
+    getLogsForJourney: vi.fn().mockResolvedValue([]),
     saveGame: vi.fn().mockImplementation(async (game: Game) => {
       savedGames.push(game)
     }),
     saveJourney: vi.fn().mockImplementation(async (journey: Journey) => {
-      savedJourneys.push(journey)
+      const index = savedJourneys.findIndex((candidate) => candidate.id === journey.id)
+
+      if (index === -1) {
+        savedJourneys.push(journey)
+      } else {
+        savedJourneys[index] = journey
+      }
     }),
     deleteGame: vi.fn().mockResolvedValue(undefined),
     saveLogEntry: vi.fn().mockResolvedValue(undefined),
+    saveLogEntryForJourney: vi.fn().mockResolvedValue(undefined),
     saveEarnedTrophies: vi.fn().mockResolvedValue(undefined),
     ensureDemoData: vi.fn().mockResolvedValue(undefined),
     resetDemoData: vi.fn().mockResolvedValue(undefined),
@@ -458,7 +466,7 @@ describe('useBacklog', () => {
       expect(store.displayStatusByGameId.value.get('replay-me')).toBe('replaying')
     })
 
-    it('refuses to create a replay while MioServer 2 sync is configured', async () => {
+    it('creates a local replay while MioServer 2 sync is configured', async () => {
       const game = makeGame({ id: 'synced', title: 'Synced', status: 'finished' })
       const store = await loadBacklog({ seedGames: [game] })
       const { useSettings } = await import('./useSettings')
@@ -467,9 +475,37 @@ describe('useBacklog', () => {
 
       await store.startReplay(game)
 
-      expect(savedJourneys).toHaveLength(1)
-      expect(store.feedback.value?.tone).toBe('error')
-      expect(store.feedback.value?.message).toMatch(/disconnect sync/i)
+      expect(savedJourneys).toHaveLength(2)
+      expect(savedJourneys[1]).toMatchObject({ gameId: 'synced', status: 'playing' })
+      expect(store.feedback.value?.tone).toBe('success')
+    })
+
+    it('completes the selected replay without changing the original finished Journey', async () => {
+      const game = makeGame({ id: 'complete-replay', title: 'Complete Replay', status: 'playing' })
+      const original = makeJourney(game, {
+        id: 'original',
+        status: 'finished',
+        rating: 10,
+        review: 'Original review',
+        finishedAt: '2025-01-01',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      })
+      const replay = makeJourney(game, {
+        id: 'replay',
+        status: 'playing',
+        startedAt: '2026-06-01',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+      })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [original, replay] })
+      await store.selectGame(game.id)
+
+      await store.updateSelectedJourneyStatus('finished')
+
+      expect(savedJourneys.find((journey) => journey.id === 'original')).toEqual(original)
+      expect(savedJourneys.find((journey) => journey.id === 'replay')).toMatchObject({
+        status: 'finished',
+        finishedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      })
     })
   })
 

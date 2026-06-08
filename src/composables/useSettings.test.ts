@@ -52,6 +52,7 @@ describe('useSettings', () => {
       expect(settings.syncApiBaseUrl).toBe('')
       expect(settings.syncToken).toBe('')
       expect(settings.autoSyncEnabled).toBe(false)
+      expect(settings.syncApiVersion).toBe(1)
       expect(settings.libraryViewMode).toBe('list')
       expect(settings.backupReminderEnabled).toBe(true)
       expect(settings.aiLocalReviewModel).toBe(DEFAULT_LOCAL_REVIEW_MODEL)
@@ -80,6 +81,7 @@ describe('useSettings', () => {
           libraryViewMode: 'shelf',
           backupReminderEnabled: false,
           lastSyncedAt: '2026-05-01T00:00:00.000Z',
+          syncApiVersion: 2,
         },
       })
       const { settings } = useSettings()
@@ -92,6 +94,7 @@ describe('useSettings', () => {
       expect(settings.libraryViewMode).toBe('shelf')
       expect(settings.backupReminderEnabled).toBe(false)
       expect(settings.lastSyncedAt).toBe('2026-05-01T00:00:00.000Z')
+      expect(settings.syncApiVersion).toBe(2)
     })
 
     it('rejects invalid enum values and falls back to defaults', async () => {
@@ -145,6 +148,7 @@ describe('useSettings', () => {
           backupReminderEnabled: true,
           aiReviewDraftAvailable: true,
           igdbMetadataAvailable: true,
+          syncApiVersion: 2,
         },
       })
       const { settings } = useSettings()
@@ -155,10 +159,27 @@ describe('useSettings', () => {
       expect(settings.backupReminderEnabled).toBe(false)
       expect(settings.aiReviewDraftAvailable).toBe(false)
       expect(settings.igdbMetadataAvailable).toBe(false)
+      expect(settings.syncApiVersion).toBe(1)
     })
   })
 
   describe('setters and persistence', () => {
+    it('resets the known sync API version when the sync endpoint changes', async () => {
+      const { useSettings } = await loadSettings({
+        stored: {
+          syncApiBaseUrl: 'https://v2.test',
+          syncToken: 'token',
+          syncApiVersion: 2,
+        },
+      })
+      const { settings } = useSettings()
+
+      settings.syncApiBaseUrl = 'https://unknown.test'
+      await nextTick()
+
+      expect(settings.syncApiVersion).toBe(1)
+    })
+
     it('writes back to localStorage on any change', async () => {
       const { useSettings } = await loadSettings()
       const { setLanguage, setLastSyncedAt } = useSettings()

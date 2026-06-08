@@ -26,6 +26,7 @@ export interface AppSettingsState {
   backupReminderDismissedAt: string | null
   aiReviewDraftAvailable: boolean
   igdbMetadataAvailable: boolean
+  syncApiVersion: number
   aiLocalReviewDraftEnabled: boolean
   aiLocalReviewModel: string
 }
@@ -128,6 +129,10 @@ function readStoredSettings(): Partial<AppSettingsState> {
       nextState.igdbMetadataAvailable = parsed.igdbMetadataAvailable
     }
 
+    if (typeof parsed.syncApiVersion === 'number' && parsed.syncApiVersion >= 1) {
+      nextState.syncApiVersion = Math.floor(parsed.syncApiVersion)
+    }
+
     if (typeof parsed.aiLocalReviewDraftEnabled === 'boolean') {
       nextState.aiLocalReviewDraftEnabled = parsed.aiLocalReviewDraftEnabled
     }
@@ -158,6 +163,7 @@ function createSettingsStore() {
     backupReminderDismissedAt: stored.backupReminderDismissedAt ?? null,
     aiReviewDraftAvailable: stored.aiReviewDraftAvailable ?? false,
     igdbMetadataAvailable: stored.igdbMetadataAvailable ?? false,
+    syncApiVersion: stored.syncApiVersion ?? 1,
     aiLocalReviewDraftEnabled: stored.aiLocalReviewDraftEnabled ?? false,
     aiLocalReviewModel: stored.aiLocalReviewModel ?? DEFAULT_LOCAL_REVIEW_MODEL,
   })
@@ -185,11 +191,21 @@ function createSettingsStore() {
         value.backupReminderDismissedAt = null
         value.aiReviewDraftAvailable = false
         value.igdbMetadataAvailable = false
+        value.syncApiVersion = 1
       }
 
       window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(value))
     },
     { deep: true, immediate: true },
+  )
+
+  watch(
+    () => [settings.syncApiBaseUrl, settings.syncToken],
+    ([apiBaseUrl, syncToken], [previousApiBaseUrl, previousSyncToken]) => {
+      if (apiBaseUrl !== previousApiBaseUrl || syncToken !== previousSyncToken) {
+        settings.syncApiVersion = 1
+      }
+    },
   )
 
   function setLanguage(language: AppLanguage) {
@@ -232,6 +248,10 @@ function createSettingsStore() {
     settings.igdbMetadataAvailable = value
   }
 
+  function setSyncApiVersion(value: number) {
+    settings.syncApiVersion = Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1
+  }
+
   function setAiLocalReviewDraftEnabled(value: boolean) {
     settings.aiLocalReviewDraftEnabled = value
   }
@@ -247,6 +267,7 @@ function createSettingsStore() {
     setAiLocalReviewModel,
     setAiReviewDraftAvailable,
     setIgdbMetadataAvailable,
+    setSyncApiVersion,
     setAutoSyncEnabled,
     setBackupReminderDismissedAt,
     setLanguage,

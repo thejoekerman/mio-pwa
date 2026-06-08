@@ -27,6 +27,7 @@ interface SyncDeps {
   setFeedback: (message: string, tone?: FeedbackState['tone']) => void
   setAiReviewDraftAvailable: (value: boolean) => void
   setIgdbMetadataAvailable: (value: boolean) => void
+  setSyncApiVersion: (value: number) => void
   setLastSyncedAt: (value: string | null) => void
   setLastSyncError: (value: string | null) => void
 }
@@ -66,6 +67,7 @@ export function createSyncHandlers(deps: SyncDeps) {
     setFeedback,
     setAiReviewDraftAvailable,
     setIgdbMetadataAvailable,
+    setSyncApiVersion,
     setLastSyncedAt,
     setLastSyncError,
   } = deps
@@ -82,14 +84,17 @@ export function createSyncHandlers(deps: SyncDeps) {
     }
   }
 
-  function canAttemptSync() {
+  function canRequestConnection() {
     return (
       !isDemoMode &&
-      !hasMultipleJourneys.value &&
       settings.syncApiBaseUrl.trim().length > 0 &&
       settings.syncToken.trim().length > 0 &&
       isOnline()
     )
+  }
+
+  function canAttemptSync() {
+    return canRequestConnection() && (!hasMultipleJourneys.value || settings.syncApiVersion >= 2)
   }
 
   function scheduleAutoSync(delay = 1400) {
@@ -119,7 +124,7 @@ export function createSyncHandlers(deps: SyncDeps) {
   async function performSync(options?: { silentSuccess?: boolean }) {
     await ensureLoaded()
 
-    if (hasMultipleJourneys.value) {
+    if (hasMultipleJourneys.value && settings.syncApiVersion < 2) {
       throw new Error(translate(settings.language, 'feedback.syncJourneysBlocked'))
     }
 
@@ -253,6 +258,7 @@ export function createSyncHandlers(deps: SyncDeps) {
       )
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
       setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
+      setSyncApiVersion(response.version ?? 1)
       setLastSyncError(null)
 
       return response
@@ -268,7 +274,7 @@ export function createSyncHandlers(deps: SyncDeps) {
   }
 
   async function refreshSyncCapabilities() {
-    if (capabilityRefreshStarted.value || !canAttemptSync()) {
+    if (capabilityRefreshStarted.value || !canRequestConnection()) {
       return
     }
 
@@ -282,6 +288,7 @@ export function createSyncHandlers(deps: SyncDeps) {
 
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
       setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
+      setSyncApiVersion(response.version ?? 1)
     } catch {
       // Keep the latest known capability state when the startup refresh fails.
     }
@@ -308,6 +315,7 @@ export function createSyncHandlers(deps: SyncDeps) {
           )
           setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
           setIgdbMetadataAvailable(connection.capabilities.igdbMetadata ?? true)
+          setSyncApiVersion(connection.version ?? 1)
         } catch {
           // Keep the latest known capability state when the refresh call fails.
         }
