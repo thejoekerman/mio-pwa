@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, reactive } from 'vue'
 import GameFormPanel from './GameFormPanel.vue'
 import type { GameFormState } from '../types'
@@ -15,6 +15,7 @@ function createForm(overrides: Partial<GameFormState> = {}): GameFormState {
     ownershipType: '',
     tags: '',
     igdbId: '',
+    wikidataId: '',
     releaseYear: '',
     priority: '',
     developer: '',
@@ -85,7 +86,6 @@ function mountForm(form = reactive(createForm())) {
   return mount(GameFormPanel, {
     props: {
       canRateCurrentStatus: true,
-      canUseIgdbMetadata: true,
       form,
       isSaving: false,
     },
@@ -104,6 +104,11 @@ function mountForm(form = reactive(createForm())) {
     },
   })
 }
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('GameFormPanel', () => {
   it('keeps text field edits connected to the shared form model', async () => {
@@ -153,6 +158,37 @@ describe('GameFormPanel', () => {
     expect(mountForm(reactive(createForm({ status: 'finished' }))).find('[data-field="Finished on"]').exists()).toBe(true)
     expect(mountForm(reactive(createForm({ status: 'paused' }))).find('[data-field="Nudge me"]').exists()).toBe(true)
     expect(mountForm(reactive(createForm({ id: null }))).find('[data-field="Review"]').exists()).toBe(false)
+  })
+
+  it('offers local metadata lookup while editing without exposing the legacy IGDB field', () => {
+    const wrapper = mountForm()
+
+    expect(wrapper.text()).toContain('Find metadata')
+    expect(wrapper.find('[data-field="IGDB ID"]').exists()).toBe(false)
+  })
+
+  it('links an explicitly selected Wikidata identity without renaming an existing Game', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          search: [{ id: 'Q123', label: 'Provider title', description: 'video game' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ claims: {} }),
+      }))
+    const form = reactive(createForm({ title: 'My preferred title' }))
+    const wrapper = mountForm(form)
+
+    await wrapper.get('.metadata-assistant-action').trigger('click')
+    await vi.runAllTimersAsync()
+    await wrapper.get('.wikidata-suggestion').trigger('click')
+
+    expect(form.title).toBe('My preferred title')
+    expect(form.wikidataId).toBe('Q123')
   })
 
   it('updates status through the select model path and reacts to conditional fields', async () => {

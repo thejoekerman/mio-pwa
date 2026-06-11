@@ -128,6 +128,7 @@ function makeDeps(overrides: Partial<Record<string, unknown>> = {}) {
     pausedAt: '',
     nudgeAt: '',
     igdbId: '',
+    wikidataId: '',
     releaseYear: '',
     developer: '',
     publisher: '',

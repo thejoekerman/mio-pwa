@@ -21,14 +21,12 @@ const { statusLabel, t, tagLabel } = useI18n()
 
 const {
   canRateCurrentStatus,
-  canUseIgdbMetadata,
   createdAt,
   formatDate,
   isSaving,
   updatedAt,
 } = defineProps<{
   canRateCurrentStatus: boolean
-  canUseIgdbMetadata: boolean
   createdAt?: string | null
   formatDate?: (value: string) => string
   isSaving: boolean
@@ -208,8 +206,15 @@ async function searchWikidataTitles(title: string) {
   }
 }
 
+function searchCurrentTitle() {
+  queueWikidataSearch(form.value.title.trim())
+}
+
 async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
-  form.value.title = suggestion.title
+  if (!form.value.id) {
+    form.value.title = suggestion.title
+  }
+  form.value.wikidataId = suggestion.id
   wikidataSuggestions.value = []
   wikidataSearchFailed.value = false
 
@@ -277,8 +282,20 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
         :placeholder="t('form.titlePlaceholder')"
       />
 
+      <VBtn
+        v-if="form.id"
+        class="metadata-assistant-action"
+        type="button"
+        variant="outlined"
+        :disabled="form.title.trim().length < 3 || isSearchingWikidata"
+        :loading="isSearchingWikidata"
+        @click="searchCurrentTitle"
+      >
+        {{ t('form.findMetadata') }}
+      </VBtn>
+
       <div
-        v-if="!form.id && (isSearchingWikidata || wikidataSuggestions.length > 0 || wikidataSearchFailed)"
+        v-if="isSearchingWikidata || wikidataSuggestions.length > 0 || wikidataSearchFailed || form.wikidataId"
         class="wikidata-suggestions"
       >
         <p class="field-hint">
@@ -287,7 +304,9 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
               ? t('form.wikidataSearching')
               : wikidataSearchFailed
                 ? t('form.wikidataFailed')
-                : t('form.wikidataSuggestions')
+                : wikidataSuggestions.length > 0
+                  ? t('form.wikidataSuggestions')
+                  : t('form.wikidataLinked', { id: form.wikidataId })
           }}
         </p>
         <div v-if="wikidataSuggestions.length > 0" class="wikidata-suggestion-list">
@@ -324,18 +343,6 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
           <VExpansionPanelTitle>{{ t('form.moreDetails') }}</VExpansionPanelTitle>
           <VExpansionPanelText>
             <div class="more-details-fields">
-              <VTextField
-                v-if="canUseIgdbMetadata"
-                v-model="form.igdbId"
-                class="form-control"
-                type="text"
-                inputmode="numeric"
-                :hint="t('form.igdbIdHint')"
-                :label="t('form.igdbId')"
-                persistent-hint
-                :placeholder="t('form.igdbIdPlaceholder')"
-              />
-
               <VTextField
                 v-model="form.coverUrl"
                 class="form-control"

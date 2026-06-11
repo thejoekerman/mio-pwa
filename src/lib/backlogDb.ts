@@ -229,6 +229,8 @@ function projectGame(game: CanonicalGame, journeys: Journey[], includeDeleted = 
     genres: game.genres,
     themes: game.themes,
     gameModes: game.gameModes,
+    externalReferences: game.externalReferences,
+    metadataReviewedAt: game.metadataReviewedAt,
     igdbId: null,
     igdbUrl: null,
     igdbTtbHastilySeconds: null,
@@ -286,7 +288,11 @@ function projectLegacyGameToCanonical(game: Game, existing?: CanonicalGame): Can
   const migrated = migrateLegacyGame(game)
 
   if (!existing) {
-    return migrated
+    return {
+      ...migrated,
+      externalReferences: game.externalReferences ?? [],
+      metadataReviewedAt: game.metadataReviewedAt ?? null,
+    }
   }
 
   return {
@@ -302,6 +308,8 @@ function projectLegacyGameToCanonical(game: Game, existing?: CanonicalGame): Can
         ? existing.publishers
         : migrated.publishers,
     tags: migrated.tags,
+    externalReferences: game.externalReferences ?? existing.externalReferences,
+    metadataReviewedAt: game.metadataReviewedAt ?? existing.metadataReviewedAt,
     cover:
       game.coverUrl === (existing.cover?.url ?? null)
         ? existing.cover

@@ -188,6 +188,44 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       ])
     })
 
+    it('persists an explicitly selected Wikidata identity for new and existing Games', async () => {
+      const wikidataReference = {
+        provider: 'wikidata' as const,
+        externalId: 'Q123',
+        url: 'https://www.wikidata.org/wiki/Q123',
+      }
+      const game = makeGame({
+        id: 'metadata-identity',
+        externalReferences: [wikidataReference],
+        metadataReviewedAt: '2026-06-11T00:00:00.000Z',
+      })
+
+      await saveGame(game)
+      expect(await getAllCanonicalGames()).toEqual([
+        expect.objectContaining({
+          externalReferences: [wikidataReference],
+          metadataReviewedAt: '2026-06-11T00:00:00.000Z',
+        }),
+      ])
+
+      await saveGameMetadata({
+        ...game,
+        externalReferences: [{
+          provider: 'wikidata',
+          externalId: 'Q456',
+          url: 'https://www.wikidata.org/wiki/Q456',
+        }],
+        metadataReviewedAt: '2026-06-11T01:00:00.000Z',
+      })
+
+      expect(await getAllCanonicalGames()).toEqual([
+        expect.objectContaining({
+          externalReferences: [expect.objectContaining({ externalId: 'Q456' })],
+          metadataReviewedAt: '2026-06-11T01:00:00.000Z',
+        }),
+      ])
+    })
+
     it('saveGame updates only the current Journey and preserves previous Journeys', async () => {
       await saveGame(makeGame({
         id: 'csv-update',

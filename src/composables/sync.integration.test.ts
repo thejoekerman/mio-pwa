@@ -107,6 +107,7 @@ function makeDeps() {
     pausedAt: '',
     nudgeAt: '',
     igdbId: '',
+    wikidataId: '',
     releaseYear: '',
     developer: '',
     publisher: '',

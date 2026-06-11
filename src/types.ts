@@ -171,6 +171,8 @@ export interface Game {
   genres?: string[]
   themes?: string[]
   gameModes?: string[]
+  externalReferences?: ExternalReference[]
+  metadataReviewedAt?: string | null
   igdbId: number | null
   igdbUrl?: string | null
   igdbTtbHastilySeconds?: number | null
@@ -284,6 +286,7 @@ export interface GameFormState {
   ownershipType: '' | GameOwnershipType
   tags: string
   igdbId: string
+  wikidataId: string
   releaseYear: string
   priority: '' | GamePriority
   developer: string

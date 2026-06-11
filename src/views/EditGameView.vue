@@ -3,15 +3,12 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GameFormPanel from '../components/GameFormPanel.vue'
 import { useBacklog } from '../composables/useBacklog'
-import { useSettings } from '../composables/useSettings'
 import { useI18n } from '../i18n'
 import type { Game } from '../types'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-const { settings } = useSettings()
-
 const {
   canRateCurrentStatus,
   formatDate,
@@ -30,13 +27,6 @@ const routeGameId = computed(() =>
 )
 const gamePendingDelete = ref<Game | null>(null)
 const deleteDialogOpen = ref(false)
-const canUseIgdbMetadata = computed(
-  () => settings.syncApiBaseUrl.trim() !== '' && settings.syncToken.trim() !== '',
-)
-const canEditIgdbMetadata = computed(
-  () => canUseIgdbMetadata.value && settings.igdbMetadataAvailable,
-)
-
 watch(
   [routeGameId, games],
   ([gameId]) => {
@@ -132,7 +122,6 @@ async function confirmDelete() {
   <div class="view-stack">
     <GameFormPanel
       :can-rate-current-status="canRateCurrentStatus"
-      :can-use-igdb-metadata="canEditIgdbMetadata"
       :created-at="games.find((entry) => entry.id === routeGameId)?.createdAt ?? null"
       :format-date="formatDate"
       v-model:form="gameForm"

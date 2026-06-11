@@ -120,6 +120,7 @@ function createBacklogStore() {
     ownershipType: '',
     tags: '',
     igdbId: '',
+    wikidataId: '',
     releaseYear: '',
     priority: '',
     developer: '',
@@ -477,6 +478,7 @@ function createBacklogStore() {
     return {
       ...source,
       tags: [...source.tags],
+      externalReferences: source.externalReferences?.map((reference) => ({ ...reference })),
       igdbDevelopers: cloneStringList(source.igdbDevelopers),
       igdbPublishers: cloneStringList(source.igdbPublishers),
       igdbThemes: cloneStringList(source.igdbThemes),
@@ -498,6 +500,7 @@ function createBacklogStore() {
     gameForm.ownershipType = ''
     gameForm.tags = ''
     gameForm.igdbId = ''
+    gameForm.wikidataId = ''
     gameForm.releaseYear = ''
     gameForm.priority = ''
     gameForm.developer = ''
@@ -527,6 +530,8 @@ function createBacklogStore() {
     gameForm.ownershipType = game.ownershipType ?? ''
     gameForm.tags = game.tags.join(', ')
     gameForm.igdbId = game.igdbId === null ? '' : String(game.igdbId)
+    gameForm.wikidataId =
+      game.externalReferences?.find((reference) => reference.provider === 'wikidata')?.externalId ?? ''
     gameForm.releaseYear = game.releaseYear ? String(game.releaseYear) : ''
     gameForm.priority = game.priority ?? ''
     gameForm.developer = game.developer ?? ''
@@ -738,6 +743,18 @@ function createBacklogStore() {
       const nextIgdbId = canEditIgdbMetadata ? normalizedIgdbId : existingPlain?.igdbId ?? null
       const shouldPreserveIgdbMetadata = isSyncConfigured.value && existingPlain?.igdbId === nextIgdbId
       const normalizedReleaseYear = normalizeReleaseYear(gameForm.releaseYear)
+      const wikidataId = /^Q\d+$/.test(gameForm.wikidataId) ? gameForm.wikidataId : ''
+      const existingExternalReferences = existingPlain?.externalReferences ?? []
+      const externalReferences = [
+        ...existingExternalReferences.filter((reference) => reference.provider !== 'wikidata'),
+        ...(wikidataId
+          ? [{
+              provider: 'wikidata' as const,
+              externalId: wikidataId,
+              url: `https://www.wikidata.org/wiki/${wikidataId}`,
+            }]
+          : []),
+      ]
 
       if (canRateCurrentStatus.value && normalizedRating !== null) {
         gameForm.rating = String(normalizedRating)
@@ -764,6 +781,12 @@ function createBacklogStore() {
         platform: gameForm.platform.trim(),
         ownershipType: gameForm.ownershipType || null,
         tags: parseTags(gameForm.tags),
+        externalReferences,
+        metadataReviewedAt:
+          wikidataId !==
+          (existingExternalReferences.find((reference) => reference.provider === 'wikidata')?.externalId ?? '')
+            ? now
+            : existingPlain?.metadataReviewedAt ?? null,
         igdbId: isSyncConfigured.value ? nextIgdbId : null,
         igdbUrl: shouldPreserveIgdbMetadata ? existingPlain?.igdbUrl ?? null : null,
         igdbTtbHastilySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbHastilySeconds ?? null : null,
