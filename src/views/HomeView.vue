@@ -25,6 +25,7 @@ const {
   earnedTrophyViews,
   exportBackup,
   finishedYearOptions,
+  finishedJourneyEntries,
   formatDate,
   games,
   journeys,
@@ -396,20 +397,16 @@ watch(finishedYearOptions, (options) => {
   }
 })
 
-const wrappedYearGames = computed(() =>
-  games.value.filter(
-    (g) =>
-      g.status === 'finished' &&
-      g.deletedAt === null &&
-      typeof g.finishedAt === 'string' &&
-      g.finishedAt.startsWith(wrappedYear.value),
+const wrappedYearJourneys = computed(() =>
+  finishedJourneyEntries.value.filter(
+    ({ journey }) => journey.finishedAt?.startsWith(wrappedYear.value),
   ),
 )
 
 const wrappedPreviewText = computed(() => {
-  const count = wrappedYearGames.value.length
+  const count = wrappedYearJourneys.value.length
   if (count === 0) return null
-  const hours = wrappedYearGames.value.reduce((sum, g) => sum + (g.playTimeHours ?? 0), 0)
+  const hours = wrappedYearJourneys.value.reduce((sum, { journey }) => sum + (journey.playTimeHours ?? 0), 0)
   return hours > 0
     ? t('wrapped.homePanelPreview', { count, hours })
     : t('wrapped.homePanelPreviewNoHours', { count })

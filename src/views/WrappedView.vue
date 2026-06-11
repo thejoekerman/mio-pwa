@@ -5,8 +5,9 @@ import GameCover from '../components/GameCover.vue'
 import { useBacklog } from '../composables/useBacklog'
 import { useI18n } from '../i18n'
 import { generateWrappedShareCard } from '../lib/wrappedShareCard'
+import { projectJourneyGame } from '../lib/journeyAnalytics'
 
-const { games, finishedYearOptions } = useBacklog()
+const { finishedJourneyEntries, finishedYearOptions } = useBacklog()
 const { t } = useI18n()
 const route = useRoute()
 
@@ -22,20 +23,17 @@ watch(finishedYearOptions, (options) => {
   }
 })
 
-const finishedGamesForYear = computed(() =>
-  games.value
+const finishedJourneysForYear = computed(() =>
+  finishedJourneyEntries.value
     .filter(
-      (g) =>
-        g.status === 'finished' &&
-        g.deletedAt === null &&
-        typeof g.finishedAt === 'string' &&
-        g.finishedAt.startsWith(selectedYear.value),
+      ({ journey }) => journey.finishedAt?.startsWith(selectedYear.value),
     )
     .sort((a, b) => {
-      if (!a.finishedAt || !b.finishedAt) return 0
-      return a.finishedAt.localeCompare(b.finishedAt)
+      if (!a.journey.finishedAt || !b.journey.finishedAt) return 0
+      return a.journey.finishedAt.localeCompare(b.journey.finishedAt)
     }),
 )
+const finishedGamesForYear = computed(() => finishedJourneysForYear.value.map(projectJourneyGame))
 
 const totalPlayHours = computed(() => {
   const total = finishedGamesForYear.value.reduce((sum, g) => sum + (g.playTimeHours ?? 0), 0)
@@ -51,9 +49,9 @@ const avgRating = computed(() => {
 
 const topPlatform = computed(() => {
   const counts = new Map<string, number>()
-  for (const g of finishedGamesForYear.value) {
-    if (g.platform) {
-      counts.set(g.platform, (counts.get(g.platform) ?? 0) + 1)
+  for (const { journey } of finishedJourneysForYear.value) {
+    if (journey.platform) {
+      counts.set(journey.platform, (counts.get(journey.platform) ?? 0) + 1)
     }
   }
   if (counts.size === 0) return null
@@ -73,11 +71,19 @@ const topTags = computed(() => {
     .map(([tag]) => tag)
 })
 
-const firstGame = computed(() => finishedGamesForYear.value[0] ?? null)
-const lastGame = computed(() => {
-  const last = finishedGamesForYear.value[finishedGamesForYear.value.length - 1] ?? null
-  return last && last.id !== firstGame.value?.id ? last : null
+const firstEntry = computed(() => finishedJourneysForYear.value[0] ?? null)
+const lastEntry = computed(() => {
+  const last = finishedJourneysForYear.value[finishedJourneysForYear.value.length - 1] ?? null
+  return last && last.journey.id !== firstEntry.value?.journey.id ? last : null
 })
+
+function entryTitle(entry: typeof firstEntry.value) {
+  if (!entry) return ''
+
+  return entry.isReplay
+    ? t('wrapped.replayTitle', { title: entry.game.title, number: entry.journeyNumber })
+    : entry.game.title
+}
 
 const isSharingCard = ref(false)
 
@@ -162,14 +168,15 @@ async function shareWrapped() {
       <template v-else>
         <div class="shelf-grid">
           <RouterLink
-            v-for="game in finishedGamesForYear"
-            :key="game.id"
+            v-for="entry in finishedJourneysForYear"
+            :key="entry.journey.id"
             class="shelf-game-card"
-            :to="{ name: 'game', params: { gameId: game.id } }"
-            :aria-label="game.title"
+            :to="{ name: 'game', params: { gameId: entry.game.id } }"
+            :aria-label="entry.game.title"
           >
-            <GameCover :title="game.title" :cover-url="game.coverUrl" size="small" />
-            <span v-if="game.platform" class="shelf-game-platform">{{ game.platform }}</span>
+            <GameCover :title="entry.game.title" :cover-url="entry.game.coverUrl" size="small" />
+            <span v-if="entry.isReplay" class="shelf-game-platform">{{ t('wrapped.replay') }}</span>
+            <span v-else-if="entry.journey.platform" class="shelf-game-platform">{{ entry.journey.platform }}</span>
           </RouterLink>
         </div>
 
@@ -194,13 +201,13 @@ async function shareWrapped() {
             <dt>{{ t('wrapped.topGenres') }}</dt>
             <dd>{{ topTags.join(' · ') }}</dd>
           </div>
-          <div v-if="firstGame" class="wrapped-stat wrapped-stat--wide">
+          <div v-if="firstEntry" class="wrapped-stat wrapped-stat--wide">
             <dt>{{ t('wrapped.firstFinished') }}</dt>
-            <dd>{{ firstGame.title }}</dd>
+            <dd>{{ entryTitle(firstEntry) }}</dd>
           </div>
-          <div v-if="lastGame" class="wrapped-stat wrapped-stat--wide">
+          <div v-if="lastEntry" class="wrapped-stat wrapped-stat--wide">
             <dt>{{ t('wrapped.lastFinished') }}</dt>
-            <dd>{{ lastGame.title }}</dd>
+            <dd>{{ entryTitle(lastEntry) }}</dd>
           </div>
         </dl>
       </template>

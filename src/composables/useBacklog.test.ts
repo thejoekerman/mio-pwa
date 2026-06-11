@@ -448,6 +448,22 @@ describe('useBacklog', () => {
       })
     })
 
+    it('counts finished Journeys separately from unique Games', async () => {
+      const game = makeGame({ id: 'replayed', status: 'finished', finishedAt: '2026-01-01' })
+      const store = await loadBacklog({
+        seedGames: [game],
+        seedJourneys: [
+          makeJourney(game, { id: 'first', finishedAt: '2025-01-01' }),
+          makeJourney(game, { id: 'replay', finishedAt: '2026-01-01' }),
+        ],
+      })
+
+      expect(store.stats.value.total).toBe(1)
+      expect(store.stats.value.finished).toBe(2)
+      expect(store.finishedYearOptions.value).toEqual(['2026', '2025'])
+      expect(store.finishedJourneyEntries.value).toHaveLength(2)
+    })
+
     it('picks the first playing/ongoing game as currentFocus', async () => {
       const games = [
         makeGame({ id: 'a', status: 'backlog' }),

@@ -39,6 +39,7 @@ import {
 } from '../lib/localReviewModels'
 import { dedupeTags } from '../lib/tags'
 import { getCurrentJourney, getGameDisplayStatus } from '../lib/gameJourneyState'
+import { getFinishedJourneyEntries, getFinishedJourneyYears } from '../lib/journeyAnalytics'
 import type {
   EarnedTrophy,
   FeedbackState,
@@ -306,11 +307,12 @@ function createBacklogStore() {
 
   const stats = computed(() => {
     const total = games.value.length
-    const playing = games.value.filter((game) => game.status === 'playing').length
-    const ongoing = games.value.filter((game) => game.status === 'ongoing').length
-    const finished = games.value.filter((game) => game.status === 'finished').length
+    const visibleJourneys = journeys.value.filter((journey) => journey.deletedAt === null)
+    const playing = visibleJourneys.filter((journey) => journey.status === 'playing').length
+    const ongoing = visibleJourneys.filter((journey) => journey.status === 'ongoing').length
+    const finished = visibleJourneys.filter((journey) => journey.status === 'finished').length
     const playLogs = totalPlayLogCount.value
-    const backlog = games.value.filter((game) => game.status === 'backlog').length
+    const backlog = visibleJourneys.filter((journey) => journey.status === 'backlog').length
 
     return { total, playing, ongoing, finished, playLogs, backlog }
   })
@@ -363,13 +365,8 @@ function createBacklogStore() {
     )
   })
 
-  const finishedYearOptions = computed(() =>
-    [...new Set(
-      games.value
-        .map((game) => (typeof game.finishedAt === 'string' ? game.finishedAt.slice(0, 4) : ''))
-        .filter(Boolean),
-    )].sort((left, right) => right.localeCompare(left)),
-  )
+  const finishedJourneyEntries = computed(() => getFinishedJourneyEntries(games.value, journeys.value))
+  const finishedYearOptions = computed(() => getFinishedJourneyYears(finishedJourneyEntries.value))
 
   const canRateCurrentStatus = computed(
     () => gameForm.status === 'finished' || gameForm.status === 'abandoned',
@@ -1278,6 +1275,7 @@ function createBacklogStore() {
     filteredGames,
     finishedYearFilter,
     finishedYearOptions,
+    finishedJourneyEntries,
     formatDate,
     gameForm,
     generateReviewDraft,

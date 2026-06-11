@@ -565,6 +565,8 @@ const messages = {
       Indie: 'Indie',
     },
     wrapped: {
+      replay: 'Replay',
+      replayTitle: '{title} · Journey {number}',
       kicker: 'Wrapped',
       yearInReview: 'Year in review',
       title: '{year} in games',
@@ -1138,6 +1140,8 @@ const messages = {
       Indie: 'Indie',
     },
     wrapped: {
+      replay: 'Replay',
+      replayTitle: '{title} · Reise {number}',
       kicker: 'Wrapped',
       yearInReview: 'Jahresrückblick',
       title: '{year} in Spielen',
@@ -1697,7 +1701,9 @@ const messages = {
         'Co-op': '協力プレイ',
         Indie: 'インディー'
     },
-    wrapped: {
+      wrapped: {
+        replay: 'リプレイ',
+        replayTitle: '{title} · 旅 {number}',
         kicker: 'Wrapped',
         yearInReview: '年間レビュー',
         title: '{year}年のゲーム記録',
