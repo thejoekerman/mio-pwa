@@ -306,15 +306,55 @@ describe('libraryCsv', () => {
     })
   })
 
-  it('requires the exact template columns', () => {
+  it('accepts a title-only spreadsheet and creates backlog games', () => {
     const plan = parseLibraryCsvImport(
-      'title,status\nGame,backlog\n',
+      'title\nGame\n',
       [],
       { createId: () => 'created-id', now: '2026-06-03T00:00:00.000Z' },
     )
 
-    expect(plan.errors).toEqual([
-      'Missing required columns: platform, rating, playTimeHours, finishedDate, coverUrl, mioId.',
-    ])
+    expect(plan.errors).toEqual([])
+    expect(plan.gamesToSave[0]).toMatchObject({
+      id: 'created-id',
+      title: 'Game',
+      status: 'backlog',
+    })
+  })
+
+  it('requires only the title header', () => {
+    const plan = parseLibraryCsvImport(
+      'status,platform\nbacklog,PC\n',
+      [],
+      { createId: () => 'created-id', now: '2026-06-03T00:00:00.000Z' },
+    )
+
+    expect(plan.errors).toEqual(['Missing required column: title.'])
+  })
+
+  it('preserves current-Journey values when update CSV omits their columns', () => {
+    const plan = parseLibraryCsvImport(
+      'title,mioId\nRenamed,g1\n',
+      [makeGame({
+        id: 'g1',
+        status: 'finished',
+        platform: 'Steam',
+        rating: 9,
+        playTimeHours: 42,
+        finishedAt: '2024-03-14',
+        coverUrl: 'https://example.test/cover.webp',
+      })],
+      { createId: () => 'created-id', now: '2026-06-03T00:00:00.000Z' },
+    )
+
+    expect(plan.errors).toEqual([])
+    expect(plan.gamesToSave[0]).toMatchObject({
+      title: 'Renamed',
+      status: 'finished',
+      platform: 'Steam',
+      rating: 9,
+      playTimeHours: 42,
+      finishedAt: '2024-03-14',
+      coverUrl: 'https://example.test/cover.webp',
+    })
   })
 })

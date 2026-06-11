@@ -187,6 +187,61 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       ])
     })
 
+    it('saveGame updates only the current Journey and preserves previous Journeys', async () => {
+      await saveGame(makeGame({
+        id: 'csv-update',
+        status: 'finished',
+        rating: 10,
+        review: 'First run',
+        playTimeHours: 30,
+        finishedAt: '2026-05-01',
+      }))
+      await saveJourney({
+        id: 'csv-update-replay',
+        gameId: 'csv-update',
+        status: 'playing',
+        platform: 'PC',
+        ownershipType: null,
+        priority: null,
+        rating: null,
+        review: '',
+        playTimeHours: 5,
+        startedAt: '2026-06-01',
+        finishedAt: null,
+        pausedAt: null,
+        nudgeAt: null,
+        createdAt: '2026-06-01T00:00:00.000Z',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+        deletedAt: null,
+      })
+
+      const projectedCurrent = (await getAllGames())[0]
+      await saveGame({
+        ...projectedCurrent,
+        title: 'Renamed by CSV',
+        status: 'paused',
+        platform: 'Steam Deck',
+        playTimeHours: 8,
+        updatedAt: '2026-06-02T00:00:00.000Z',
+      })
+
+      expect(await getAllJourneys()).toEqual([
+        expect.objectContaining({
+          id: 'csv-update-replay',
+          status: 'paused',
+          platform: 'Steam Deck',
+          playTimeHours: 8,
+        }),
+        expect.objectContaining({
+          id: 'csv-update:initial-journey',
+          status: 'finished',
+          rating: 10,
+          review: 'First run',
+          playTimeHours: 30,
+        }),
+      ])
+    })
+
     it('returns games sorted by updatedAt descending', async () => {
       await saveGame(makeGame({ id: 'old', updatedAt: '2026-01-01T00:00:00.000Z' }))
       await saveGame(makeGame({ id: 'new', updatedAt: '2026-05-01T00:00:00.000Z' }))
