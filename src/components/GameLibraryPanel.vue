@@ -14,14 +14,16 @@ import {
   type GameOwnershipFilter,
   type GameSortOption,
   type GameStatus,
+  type LibraryStatusFilter,
   type LibraryViewMode,
 } from '../types'
 const { ownershipLabel, sortLabel, statusLabel, t } = useI18n()
 const { settings, setLibraryViewMode } = useSettings()
-const STATUS_FILTER_ORDER: GameStatus[] = [
+const STATUS_FILTER_ORDER: GameDisplayStatus[] = [
   'backlog',
   'finished',
   'playing',
+  'replaying',
   'ongoing',
   'paused',
   'abandoned',
@@ -39,7 +41,7 @@ const props = defineProps<{
   searchQuery: string
   selectedGameId: string | null
   sortOption: GameSortOption
-  statusFilter: 'all' | GameStatus
+  statusFilter: LibraryStatusFilter
 }>()
 
 const emit = defineEmits<{
@@ -51,7 +53,7 @@ const emit = defineEmits<{
       finishedYearFilter?: 'all' | string
       ownershipFilter?: GameOwnershipFilter
       sortOption?: GameSortOption
-      statusFilter?: 'all' | GameStatus
+      statusFilter?: LibraryStatusFilter
     },
   ]
 }>()
@@ -323,7 +325,7 @@ async function handleStatusChange(
           :class="{ active: statusFilter === option.value }"
           :color="statusFilter === option.value ? 'primary' : undefined"
           :variant="statusFilter === option.value ? 'flat' : 'outlined'"
-          @click="emit('update', { statusFilter: option.value as 'all' | GameStatus })"
+          @click="emit('update', { statusFilter: option.value as LibraryStatusFilter })"
         >
           {{ option.title }}
         </VChip>

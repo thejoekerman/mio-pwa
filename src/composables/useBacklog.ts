@@ -49,6 +49,7 @@ import type {
   GameOwnershipFilter,
   GameSortOption,
   GameStatus,
+  LibraryStatusFilter,
   Journey,
   LibraryCsvImportResult,
   LogEntry,
@@ -77,7 +78,7 @@ function createBacklogStore() {
   const trophyUnlockQueue = ref<EarnedTrophy[]>([])
   const latestTrophyUnlockSource = ref<TrophyUnlockSource | null>(null)
   const totalPlayLogCount = ref(0)
-  const statusFilter = ref<'all' | GameStatus>('backlog')
+  const statusFilter = ref<LibraryStatusFilter>('backlog')
   const ownershipFilter = ref<GameOwnershipFilter>('all')
   const finishedYearFilter = ref<'all' | string>('all')
   const sortOption = ref<GameSortOption>('created-desc')
@@ -168,6 +169,21 @@ function createBacklogStore() {
       ]),
     ),
   )
+  const latestFinishedAtByGameId = computed(() => {
+    const dates = new Map<string, string>()
+
+    for (const journey of journeys.value) {
+      if (journey.deletedAt !== null || journey.status !== 'finished' || !journey.finishedAt) {
+        continue
+      }
+
+      if (journey.finishedAt > (dates.get(journey.gameId) ?? '')) {
+        dates.set(journey.gameId, journey.finishedAt)
+      }
+    }
+
+    return dates
+  })
   const selectedGameDisplayStatus = computed<GameDisplayStatus | null>(() =>
     selectedGame.value
       ? displayStatusByGameId.value.get(selectedGame.value.id) ?? selectedGame.value.status
@@ -227,8 +243,17 @@ function createBacklogStore() {
     const query = searchQuery.value.trim().toLowerCase()
 
     const matchingGames = games.value.filter((game) => {
-      const matchesStatus =
-        statusFilter.value === 'all' || game.status === statusFilter.value
+      const gameJourneys = journeys.value.filter(
+        (journey) => journey.gameId === game.id && journey.deletedAt === null,
+      )
+      const currentJourney = getCurrentJourney(gameJourneys)
+      const displayStatus = displayStatusByGameId.value.get(game.id)
+      const matchesStatus = matchesLibraryStatus(
+        statusFilter.value,
+        currentJourney,
+        gameJourneys,
+        displayStatus,
+      )
       const matchesOwnership =
         ownershipFilter.value === 'all' ||
         game.ownershipType === ownershipFilter.value ||
@@ -236,9 +261,11 @@ function createBacklogStore() {
       const matchesFinishedYear =
         finishedYearFilter.value === 'all'
           ? true
-          : game.status === 'finished' &&
-            typeof game.finishedAt === 'string' &&
-            game.finishedAt.startsWith(finishedYearFilter.value)
+          : gameJourneys.some(
+              (journey) =>
+                journey.status === 'finished' &&
+                journey.finishedAt?.startsWith(finishedYearFilter.value),
+            )
       const matchesQuery =
         query.length === 0 ||
         game.title.toLowerCase().includes(query) ||
@@ -282,9 +309,27 @@ function createBacklogStore() {
     })
   })
 
+  function matchesLibraryStatus(
+    filter: LibraryStatusFilter,
+    currentJourney: Journey | null,
+    gameJourneys: Journey[],
+    displayStatus: GameDisplayStatus | undefined,
+  ) {
+    if (filter === 'all') return true
+    if (filter === 'replaying') return displayStatus === 'replaying'
+    if (filter === 'playing') return currentJourney?.status === 'playing'
+    if (filter === 'finished') {
+      return gameJourneys.some((journey) => journey.status === 'finished')
+    }
+
+    return currentJourney?.status === filter
+  }
+
   function compareFinishedAt(left: Game, right: Game) {
-    const leftTime = left.finishedAt ? new Date(left.finishedAt).getTime() : 0
-    const rightTime = right.finishedAt ? new Date(right.finishedAt).getTime() : 0
+    const leftFinishedAt = latestFinishedAtByGameId.value.get(left.id) ?? left.finishedAt
+    const rightFinishedAt = latestFinishedAtByGameId.value.get(right.id) ?? right.finishedAt
+    const leftTime = leftFinishedAt ? new Date(leftFinishedAt).getTime() : 0
+    const rightTime = rightFinishedAt ? new Date(rightFinishedAt).getTime() : 0
 
     return leftTime - rightTime || left.title.localeCompare(right.title)
   }

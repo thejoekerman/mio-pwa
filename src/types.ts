@@ -9,6 +9,7 @@ export const GAME_STATUSES = [
 
 export type GameStatus = (typeof GAME_STATUSES)[number]
 export type GameDisplayStatus = GameStatus | 'replaying'
+export type LibraryStatusFilter = 'all' | GameDisplayStatus
 
 export const APP_LANGUAGES = ['en', 'de', 'ja'] as const
 

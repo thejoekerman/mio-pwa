@@ -389,6 +389,51 @@ describe('useBacklog', () => {
       expect(titles).not.toContain('Balatro')
     })
 
+    it('includes replays in Playing and exposes a dedicated Replaying filter', async () => {
+      const replaying = makeGame({ id: 'replaying', title: 'Replaying', status: 'playing' })
+      const ordinary = makeGame({ id: 'ordinary', title: 'Ordinary', status: 'playing' })
+      const store = await loadBacklog({
+        seedGames: [replaying, ordinary],
+        seedJourneys: [
+          makeJourney(replaying, {
+            id: 'replaying-first',
+            status: 'finished',
+            finishedAt: '2025-01-01',
+            updatedAt: '2025-01-01T00:00:00.000Z',
+          }),
+          makeJourney(replaying, { id: 'replaying-current', status: 'playing' }),
+          makeJourney(ordinary),
+        ],
+      })
+
+      store.statusFilter.value = 'playing'
+      expect(store.filteredGames.value.map((game) => game.id)).toEqual(expect.arrayContaining(['replaying', 'ordinary']))
+
+      store.statusFilter.value = 'replaying'
+      expect(store.filteredGames.value.map((game) => game.id)).toEqual(['replaying'])
+    })
+
+    it('filters Finished and finish year by any completed Journey', async () => {
+      const replaying = makeGame({ id: 'replaying', title: 'Replaying', status: 'playing' })
+      const store = await loadBacklog({
+        seedGames: [replaying],
+        seedJourneys: [
+          makeJourney(replaying, {
+            id: 'replaying-first',
+            status: 'finished',
+            finishedAt: '2025-06-01',
+            updatedAt: '2025-06-01T00:00:00.000Z',
+          }),
+          makeJourney(replaying, { id: 'replaying-current', status: 'playing' }),
+        ],
+      })
+
+      store.statusFilter.value = 'finished'
+      store.finishedYearFilter.value = '2025'
+
+      expect(store.filteredGames.value.map((game) => game.id)).toEqual(['replaying'])
+    })
+
     it('filters by ownership and treats `both` as a match for either physical or digital', async () => {
       const store = await loadBacklog({ seedGames: games })
       store.statusFilter.value = 'all'

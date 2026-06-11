@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import GameLibraryPanel from '../components/GameLibraryPanel.vue'
 import { useBacklog } from '../composables/useBacklog'
-import type { GameOwnershipFilter, GameSortOption, GameStatus } from '../types'
+import type { GameOwnershipFilter, GameSortOption, LibraryStatusFilter } from '../types'
 const router = useRouter()
 const {
   filteredGames,
@@ -35,7 +35,7 @@ function handleLibraryUpdate(payload: {
   ownershipFilter?: GameOwnershipFilter
   searchQuery?: string
   sortOption?: GameSortOption
-  statusFilter?: 'all' | GameStatus
+  statusFilter?: LibraryStatusFilter
 }) {
   if (payload.searchQuery !== undefined) {
     searchQuery.value = payload.searchQuery
