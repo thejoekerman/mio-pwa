@@ -1,5 +1,5 @@
 import type { MessageKey } from '../i18n'
-import type { EarnedTrophy, Game, LogEntry } from '../types'
+import type { EarnedTrophy, Game, Journey, LogEntry } from '../types'
 
 export interface TrophyDefinition {
   id: string
@@ -19,15 +19,15 @@ interface TrophyFacts {
   games: Game[]
   logs: LogEntry[]
   totalGames: number
-  finishedGames: Game[]
+  finishedJourneys: Journey[]
   totalLogs: number
-  reviews: Game[]
-  highRatedGames: Game[]
+  reviews: Journey[]
+  highRatedJourneys: Journey[]
   logsByGameId: Map<string, LogEntry[]>
   earliestLogAt: string | null
   earliestFinishedAt: string | null
-  earliestReviewGame: Game | null
-  earliestHighRatedGame: Game | null
+  earliestReviewJourney: Journey | null
+  earliestHighRatedJourney: Journey | null
   mostLoggedGame: { game: Game; logs: LogEntry[] } | null
 }
 
@@ -103,6 +103,7 @@ export const TROPHY_DEFINITIONS: TrophyDefinition[] = [
 
 export function evaluateTrophies(
   games: Game[],
+  journeys: Journey[],
   logs: LogEntry[],
   earnedTrophies: EarnedTrophy[],
   now = new Date().toISOString(),
@@ -112,7 +113,7 @@ export function evaluateTrophies(
       .filter((trophy) => trophy.deletedAt === null)
       .map((trophy) => trophy.trophyId),
   )
-  const facts = buildTrophyFacts(games, logs)
+  const facts = buildTrophyFacts(games, journeys, logs)
   const newlyEarned = trophyEvaluations(facts)
     .filter((result) => !earnedIds.has(result.trophyId))
     .map((result) => createEarnedTrophy(result, now))
@@ -140,12 +141,16 @@ export function createTrophyViews(earnedTrophies: EarnedTrophy[]): TrophyView[] 
   })
 }
 
-export function buildTrophyFacts(games: Game[], logs: LogEntry[]): TrophyFacts {
+export function buildTrophyFacts(games: Game[], journeys: Journey[], logs: LogEntry[]): TrophyFacts {
   const visibleGames = games.filter((game) => game.deletedAt === null)
+  const visibleGameIds = new Set(visibleGames.map((game) => game.id))
+  const visibleJourneys = journeys.filter(
+    (journey) => journey.deletedAt === null && visibleGameIds.has(journey.gameId),
+  )
   const visibleLogs = logs.filter((log) => log.deletedAt === null)
-  const finishedGames = visibleGames.filter((game) => game.status === 'finished')
-  const reviews = visibleGames.filter((game) => game.review.trim() !== '')
-  const highRatedGames = visibleGames.filter((game) => (game.rating ?? 0) >= 9)
+  const finishedJourneys = visibleJourneys.filter((journey) => journey.status === 'finished')
+  const reviews = visibleJourneys.filter((journey) => journey.review.trim() !== '')
+  const highRatedJourneys = visibleJourneys.filter((journey) => (journey.rating ?? 0) >= 9)
   const logsByGameId = new Map<string, LogEntry[]>()
 
   for (const log of visibleLogs) {
@@ -171,18 +176,18 @@ export function buildTrophyFacts(games: Game[], logs: LogEntry[]): TrophyFacts {
     games: visibleGames,
     logs: visibleLogs,
     totalGames: visibleGames.length,
-    finishedGames,
+    finishedJourneys,
     totalLogs: visibleLogs.length,
     reviews,
-    highRatedGames,
+    highRatedJourneys,
     logsByGameId,
     earliestLogAt: visibleLogs.map((log) => log.createdAt).sort()[0] ?? null,
-    earliestFinishedAt: finishedGames
-      .map((game) => game.finishedAt)
+    earliestFinishedAt: finishedJourneys
+      .map((journey) => journey.finishedAt)
       .filter((date): date is string => typeof date === 'string')
       .sort()[0] ?? null,
-    earliestReviewGame: [...reviews].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))[0] ?? null,
-    earliestHighRatedGame: [...highRatedGames].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))[0] ?? null,
+    earliestReviewJourney: [...reviews].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))[0] ?? null,
+    earliestHighRatedJourney: [...highRatedJourneys].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))[0] ?? null,
     mostLoggedGame,
   }
 }
@@ -203,27 +208,27 @@ function trophyEvaluations(facts: TrophyFacts): TrophyEvaluation[] {
           context: { title: facts.mostLoggedGame.game.title, count: facts.mostLoggedGame.logs.length },
         }
       : null,
-    facts.finishedGames.length >= 1
+    facts.finishedJourneys.length >= 1
       ? { trophyId: 'first-finish', earnedAt: facts.earliestFinishedAt }
       : null,
-    facts.finishedGames.length >= 10
-      ? { trophyId: 'credits-rolled', earnedAt: finishedThresholdDate(facts.finishedGames, 10), context: { count: facts.finishedGames.length } }
+    facts.finishedJourneys.length >= 10
+      ? { trophyId: 'credits-rolled', earnedAt: finishedThresholdDate(facts.finishedJourneys, 10), context: { count: facts.finishedJourneys.length } }
       : null,
     facts.reviews.length >= 1
       ? {
           trophyId: 'first-review',
-          earnedAt: facts.earliestReviewGame?.updatedAt ?? null,
-          gameId: facts.earliestReviewGame?.id ?? null,
+          earnedAt: facts.earliestReviewJourney?.updatedAt ?? null,
+          gameId: facts.earliestReviewJourney?.gameId ?? null,
         }
       : null,
     facts.reviews.length >= 3
       ? { trophyId: 'critic-notes', earnedAt: reviewsThresholdDate(facts.reviews, 3), context: { count: facts.reviews.length } }
       : null,
-    facts.highRatedGames.length >= 1
+    facts.highRatedJourneys.length >= 1
       ? {
           trophyId: 'strong-feelings',
-          earnedAt: facts.earliestHighRatedGame?.updatedAt ?? null,
-          gameId: facts.earliestHighRatedGame?.id ?? null,
+          earnedAt: facts.earliestHighRatedJourney?.updatedAt ?? null,
+          gameId: facts.earliestHighRatedJourney?.gameId ?? null,
         }
       : null,
     facts.totalGames >= 25
@@ -256,15 +261,15 @@ function logThresholdDate(logs: LogEntry[], threshold: number) {
   return [...logs].sort((left, right) => left.createdAt.localeCompare(right.createdAt))[threshold - 1]?.createdAt ?? null
 }
 
-function finishedThresholdDate(games: Game[], threshold: number) {
-  return [...games]
-    .map((game) => game.finishedAt)
+function finishedThresholdDate(journeys: Journey[], threshold: number) {
+  return [...journeys]
+    .map((journey) => journey.finishedAt)
     .filter((date): date is string => typeof date === 'string')
     .sort()[threshold - 1] ?? null
 }
 
-function reviewsThresholdDate(games: Game[], threshold: number) {
-  return [...games].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))[threshold - 1]?.updatedAt ?? null
+function reviewsThresholdDate(journeys: Journey[], threshold: number) {
+  return [...journeys].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))[threshold - 1]?.updatedAt ?? null
 }
 
 function gamesThresholdDate(games: Game[], threshold: number) {

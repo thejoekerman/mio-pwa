@@ -1,10 +1,11 @@
 import type { Ref } from 'vue'
 import { saveEarnedTrophies } from '../lib/backlogDb'
 import { evaluateTrophies } from '../lib/trophies'
-import type { EarnedTrophy, Game, LogEntry, TrophyUnlockSource } from '../types'
+import type { EarnedTrophy, Game, Journey, LogEntry, TrophyUnlockSource } from '../types'
 
 interface TrophyDeps {
   games: Ref<Game[]>
+  journeys: Ref<Journey[]>
   allLogs: Ref<LogEntry[]>
   earnedTrophies: Ref<EarnedTrophy[]>
   trophyUnlockQueue: Ref<EarnedTrophy[]>
@@ -16,6 +17,7 @@ interface TrophyDeps {
 export function createTrophyHandlers(deps: TrophyDeps) {
   const {
     games,
+    journeys,
     allLogs,
     earnedTrophies,
     trophyUnlockQueue,
@@ -25,7 +27,7 @@ export function createTrophyHandlers(deps: TrophyDeps) {
   } = deps
 
   async function unlockEarnedTrophies(source: TrophyUnlockSource) {
-    const newlyEarned = evaluateTrophies(games.value, allLogs.value, earnedTrophies.value)
+    const newlyEarned = evaluateTrophies(games.value, journeys.value, allLogs.value, earnedTrophies.value)
 
     if (newlyEarned.length === 0) {
       return []

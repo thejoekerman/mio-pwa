@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { evaluateTrophies } from './trophies'
-import type { Game, LogEntry, EarnedTrophy } from '../types'
+import { evaluateTrophies as evaluateJourneyTrophies } from './trophies'
+import type { Game, Journey, LogEntry, EarnedTrophy } from '../types'
 
 function makeGame(overrides: Partial<Game> = {}): Game {
   return {
@@ -34,6 +34,32 @@ function makeLog(overrides: Partial<LogEntry> = {}): LogEntry {
     deletedAt: null,
     ...overrides,
   }
+}
+
+function makeJourney(game: Game, overrides: Partial<Journey> = {}): Journey {
+  return {
+    id: `${game.id}:journey`,
+    gameId: game.id,
+    status: game.status,
+    platform: game.platform,
+    ownershipType: game.ownershipType,
+    priority: game.priority ?? null,
+    rating: game.rating,
+    review: game.review,
+    playTimeHours: game.playTimeHours,
+    startedAt: null,
+    finishedAt: game.finishedAt,
+    pausedAt: game.pausedAt,
+    nudgeAt: game.nudgeAt,
+    createdAt: game.createdAt,
+    updatedAt: game.updatedAt,
+    deletedAt: game.deletedAt,
+    ...overrides,
+  }
+}
+
+function evaluateTrophies(games: Game[], logs: LogEntry[], earnedTrophies: EarnedTrophy[]) {
+  return evaluateJourneyTrophies(games, games.map((game) => makeJourney(game)), logs, earnedTrophies)
 }
 
 function makeEarned(trophyId: string): EarnedTrophy {
@@ -129,5 +155,36 @@ describe('evaluateTrophies', () => {
     const log = makeLog({ deletedAt: '2024-01-01T00:00:00.000Z' })
     const result = evaluateTrophies([makeGame()], [log], [])
     expect(earnedIds(result)).not.toContain('first-log')
+  })
+
+  it('counts replay completions toward finish trophies', () => {
+    const game = makeGame({ id: 'favorite' })
+    const journeys = Array.from({ length: 10 }, (_, index) =>
+      makeJourney(game, {
+        id: `journey-${index}`,
+        status: 'finished',
+        finishedAt: `2024-01-${String(index + 1).padStart(2, '0')}`,
+      }),
+    )
+    const result = evaluateJourneyTrophies([game], journeys, [], [])
+
+    expect(earnedIds(result)).toContain('first-finish')
+    expect(earnedIds(result)).toContain('credits-rolled')
+  })
+
+  it('counts Journey reviews and ratings while shelf trophies count unique Games', () => {
+    const game = makeGame({ id: 'favorite' })
+    const journeys = Array.from({ length: 3 }, (_, index) =>
+      makeJourney(game, {
+        id: `journey-${index}`,
+        review: `Review ${index}`,
+        rating: 10,
+      }),
+    )
+    const result = evaluateJourneyTrophies([game], journeys, [], [])
+
+    expect(earnedIds(result)).toContain('critic-notes')
+    expect(earnedIds(result)).toContain('strong-feelings')
+    expect(earnedIds(result)).not.toContain('shelf-curator')
   })
 })

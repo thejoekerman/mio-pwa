@@ -622,6 +622,7 @@ function createBacklogStore() {
 
   const trophyHandlers = createTrophyHandlers({
     games,
+    journeys,
     allLogs,
     earnedTrophies,
     trophyUnlockQueue,
