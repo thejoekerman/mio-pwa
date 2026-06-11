@@ -44,6 +44,7 @@ const emit = defineEmits<{
 const wikidataSuggestions = ref<WikidataGameSuggestion[]>([])
 const isSearchingWikidata = ref(false)
 const wikidataSearchFailed = ref(false)
+const wikidataSearchCompleted = ref(false)
 let wikidataSearchTimer: number | null = null
 let wikidataAbortController: AbortController | null = null
 
@@ -169,6 +170,7 @@ function queueWikidataSearch(title: string) {
   wikidataAbortController?.abort()
   wikidataAbortController = null
   wikidataSearchFailed.value = false
+  wikidataSearchCompleted.value = false
 
   if (title.length < 3 || isOffline()) {
     wikidataSuggestions.value = []
@@ -194,6 +196,7 @@ async function searchWikidataTitles(title: string) {
 
   try {
     wikidataSuggestions.value = await searchWikidataGames(title, wikidataAbortController.signal)
+    wikidataSearchCompleted.value = true
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       return
@@ -201,6 +204,7 @@ async function searchWikidataTitles(title: string) {
 
     wikidataSuggestions.value = []
     wikidataSearchFailed.value = true
+    wikidataSearchCompleted.value = true
   } finally {
     isSearchingWikidata.value = false
   }
@@ -217,6 +221,7 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
   form.value.wikidataId = suggestion.id
   wikidataSuggestions.value = []
   wikidataSearchFailed.value = false
+  wikidataSearchCompleted.value = false
 
   const { tags, developer, publisher, releaseYear } = isOffline()
     ? { tags: [], developer: null, publisher: null, releaseYear: null }
@@ -294,7 +299,7 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
       />
 
       <div
-        v-if="isSearchingWikidata || wikidataSuggestions.length > 0 || wikidataSearchFailed || form.wikidataId"
+        v-if="isSearchingWikidata || wikidataSearchCompleted || form.wikidataId"
         class="wikidata-suggestions"
       >
         <p class="field-hint">
@@ -305,7 +310,9 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
                 ? t('form.wikidataFailed')
                 : wikidataSuggestions.length > 0
                   ? t('form.wikidataSuggestions')
-                  : t('form.wikidataLinked', { id: form.wikidataId })
+                  : form.wikidataId
+                    ? t('form.wikidataLinked', { id: form.wikidataId })
+                    : t('form.wikidataNoMatches')
           }}
         </p>
         <div v-if="wikidataSuggestions.length > 0" class="wikidata-suggestion-list">

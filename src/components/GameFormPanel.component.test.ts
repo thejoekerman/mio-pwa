@@ -191,6 +191,21 @@ describe('GameFormPanel', () => {
     expect(form.wikidataId).toBe('Q123')
   })
 
+  it('shows a distinct empty result after a successful metadata search', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ search: [] }),
+    }))
+    const wrapper = mountForm()
+
+    await wrapper.get('.metadata-assistant-action').trigger('click')
+    await vi.runAllTimersAsync()
+
+    expect(wrapper.text()).toContain('No likely game matches found')
+    expect(wrapper.text()).not.toContain('Could not load title suggestions')
+  })
+
   it('updates status through the select model path and reacts to conditional fields', async () => {
     const form = reactive(createForm({ status: 'backlog' }))
     const wrapper = mountForm(form)
