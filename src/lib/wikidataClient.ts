@@ -20,6 +20,12 @@ export interface WikidataGameMetadata {
   releaseYear: number | null
 }
 
+export interface WikipediaCoverSuggestion {
+  articleTitle: string
+  imageUrl: string
+  pageUrl: string
+}
+
 const EMPTY_METADATA: WikidataGameMetadata = {
   tags: [],
   developer: null,
@@ -114,6 +120,61 @@ export async function getWikidataGameMetadata(itemId: string): Promise<WikidataG
     }
   } catch {
     return { ...EMPTY_METADATA }
+  }
+}
+
+export async function getWikipediaCoverSuggestion(
+  itemId: string,
+): Promise<WikipediaCoverSuggestion | null> {
+  try {
+    const sitelinkParams = new URLSearchParams({
+      action: 'wbgetentities',
+      format: 'json',
+      origin: '*',
+      props: 'sitelinks/urls',
+      ids: itemId,
+      sitefilter: 'enwiki',
+    })
+    const sitelinkResponse = await fetch(`https://www.wikidata.org/w/api.php?${sitelinkParams.toString()}`)
+
+    if (!sitelinkResponse.ok) {
+      return null
+    }
+
+    const sitelinkPayload = await sitelinkResponse.json() as {
+      entities?: Record<string, { sitelinks?: { enwiki?: { title?: unknown; url?: unknown } } }>
+    }
+    const sitelink = sitelinkPayload.entities?.[itemId]?.sitelinks?.enwiki
+    const articleTitle = typeof sitelink?.title === 'string' ? sitelink.title : ''
+    const pageUrl = typeof sitelink?.url === 'string' ? sitelink.url : ''
+
+    if (!articleTitle || !pageUrl) {
+      return null
+    }
+
+    const summaryResponse = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`,
+    )
+
+    if (!summaryResponse.ok) {
+      return null
+    }
+
+    const summary = await summaryResponse.json() as {
+      originalimage?: { source?: unknown }
+      thumbnail?: { source?: unknown }
+    }
+    const originalImage = summary.originalimage?.source
+    const thumbnail = summary.thumbnail?.source
+    const imageUrl = typeof originalImage === 'string'
+      ? originalImage
+      : typeof thumbnail === 'string'
+        ? thumbnail
+        : ''
+
+    return imageUrl ? { articleTitle, imageUrl, pageUrl } : null
+  } catch {
+    return null
   }
 }
 

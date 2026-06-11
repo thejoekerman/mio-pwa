@@ -226,6 +226,29 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       ])
     })
 
+    it('persists an applied Wikipedia cover with its source page', async () => {
+      await saveGame(makeGame({
+        id: 'wikipedia-cover',
+        coverUrl: 'https://upload.wikimedia.org/cover.png',
+        coverSource: {
+          provider: 'wikipedia',
+          pageUrl: 'https://en.wikipedia.org/wiki/Game',
+        },
+      }))
+
+      expect(await getAllCanonicalGames()).toEqual([
+        expect.objectContaining({
+          cover: {
+            url: 'https://upload.wikimedia.org/cover.png',
+            source: {
+              provider: 'wikipedia',
+              pageUrl: 'https://en.wikipedia.org/wiki/Game',
+            },
+          },
+        }),
+      ])
+    })
+
     it('saveGame updates only the current Journey and preserves previous Journeys', async () => {
       await saveGame(makeGame({
         id: 'csv-update',

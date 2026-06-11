@@ -231,6 +231,7 @@ function projectGame(game: CanonicalGame, journeys: Journey[], includeDeleted = 
     gameModes: game.gameModes,
     externalReferences: game.externalReferences,
     metadataReviewedAt: game.metadataReviewedAt,
+    coverSource: game.cover?.source ?? null,
     igdbId: null,
     igdbUrl: null,
     igdbTtbHastilySeconds: null,
@@ -292,6 +293,9 @@ function projectLegacyGameToCanonical(game: Game, existing?: CanonicalGame): Can
       ...migrated,
       externalReferences: game.externalReferences ?? [],
       metadataReviewedAt: game.metadataReviewedAt ?? null,
+      cover: game.coverUrl
+        ? { url: game.coverUrl, source: game.coverSource ?? migrated.cover?.source ?? { provider: 'manual', pageUrl: null } }
+        : null,
     }
   }
 
@@ -313,7 +317,9 @@ function projectLegacyGameToCanonical(game: Game, existing?: CanonicalGame): Can
     cover:
       game.coverUrl === (existing.cover?.url ?? null)
         ? existing.cover
-        : migrated.cover,
+        : game.coverUrl
+          ? { url: game.coverUrl, source: game.coverSource ?? { provider: 'manual', pageUrl: null } }
+          : null,
     updatedAt: game.updatedAt,
     deletedAt: game.deletedAt,
   }

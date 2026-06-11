@@ -173,6 +173,7 @@ export interface Game {
   gameModes?: string[]
   externalReferences?: ExternalReference[]
   metadataReviewedAt?: string | null
+  coverSource?: GameArtwork['source'] | null
   igdbId: number | null
   igdbUrl?: string | null
   igdbTtbHastilySeconds?: number | null
@@ -287,6 +288,9 @@ export interface GameFormState {
   tags: string
   igdbId: string
   wikidataId: string
+  wikipediaTitle: string
+  coverSourceUrl: string
+  coverSourcePageUrl: string
   releaseYear: string
   priority: '' | GamePriority
   developer: string

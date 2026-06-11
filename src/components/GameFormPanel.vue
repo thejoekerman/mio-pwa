@@ -11,7 +11,9 @@ import {
 } from '../types'
 import {
   getWikidataGameMetadata,
+  getWikipediaCoverSuggestion,
   searchWikidataGames,
+  type WikipediaCoverSuggestion,
   type WikidataGameSuggestion,
 } from '../lib/wikidataClient'
 import { addDaysDate } from '../lib/dateUtils'
@@ -45,6 +47,8 @@ const wikidataSuggestions = ref<WikidataGameSuggestion[]>([])
 const isSearchingWikidata = ref(false)
 const wikidataSearchFailed = ref(false)
 const wikidataSearchCompleted = ref(false)
+const wikipediaCoverSuggestion = ref<WikipediaCoverSuggestion | null>(null)
+const isLoadingWikipediaCover = ref(false)
 let wikidataSearchTimer: number | null = null
 let wikidataAbortController: AbortController | null = null
 
@@ -234,10 +238,19 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
   wikidataSuggestions.value = []
   wikidataSearchFailed.value = false
   wikidataSearchCompleted.value = false
+  wikipediaCoverSuggestion.value = null
 
-  const { tags, developer, publisher, releaseYear } = isOffline()
-    ? { tags: [], developer: null, publisher: null, releaseYear: null }
-    : await getWikidataGameMetadata(suggestion.id)
+  const [{ tags, developer, publisher, releaseYear }, coverSuggestion] = isOffline()
+    ? [
+        { tags: [], developer: null, publisher: null, releaseYear: null },
+        null,
+      ] as const
+    : await Promise.all([
+        getWikidataGameMetadata(suggestion.id),
+        loadWikipediaCoverSuggestion(suggestion.id),
+      ])
+
+  wikipediaCoverSuggestion.value = coverSuggestion
 
   if (tags.length > 0) {
     setTags([...selectedTags.value, ...tags])
@@ -251,6 +264,30 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
   if (releaseYear !== null && !form.value.releaseYear.trim()) {
     form.value.releaseYear = String(releaseYear)
   }
+}
+
+async function loadWikipediaCoverSuggestion(itemId: string) {
+  isLoadingWikipediaCover.value = true
+
+  try {
+    return await getWikipediaCoverSuggestion(itemId)
+  } finally {
+    isLoadingWikipediaCover.value = false
+  }
+}
+
+function useWikipediaCover() {
+  const suggestion = wikipediaCoverSuggestion.value
+
+  if (!suggestion) {
+    return
+  }
+
+  form.value.coverUrl = suggestion.imageUrl
+  form.value.coverSourceUrl = suggestion.imageUrl
+  form.value.coverSourcePageUrl = suggestion.pageUrl
+  form.value.wikipediaTitle = suggestion.articleTitle
+  wikipediaCoverSuggestion.value = null
 }
 
 </script>
@@ -337,6 +374,24 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
           >
             <span>{{ suggestion.title }}</span>
             <small>{{ wikidataSuggestionDetails(suggestion) }}</small>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="isLoadingWikipediaCover" class="metadata-cover-status field-hint">
+        {{ t('form.wikipediaCoverSearching') }}
+      </div>
+
+      <div v-else-if="wikipediaCoverSuggestion" class="metadata-cover-suggestion">
+        <img
+          :src="wikipediaCoverSuggestion.imageUrl"
+          :alt="t('form.wikipediaCoverAlt', { title: form.title })"
+        />
+        <div>
+          <strong>{{ t('form.wikipediaCoverSuggestion') }}</strong>
+          <small>{{ wikipediaCoverSuggestion.articleTitle }}</small>
+          <button class="mini-button" type="button" @click="useWikipediaCover">
+            {{ t('form.useWikipediaCover') }}
           </button>
         </div>
       </div>

@@ -16,6 +16,9 @@ function createForm(overrides: Partial<GameFormState> = {}): GameFormState {
     tags: '',
     igdbId: '',
     wikidataId: '',
+    wikipediaTitle: '',
+    coverSourceUrl: '',
+    coverSourcePageUrl: '',
     releaseYear: '',
     priority: '',
     developer: '',
@@ -246,6 +249,62 @@ describe('GameFormPanel', () => {
     await vi.runAllTimersAsync()
 
     expect(wrapper.get('.wikidata-suggestion small').text()).toBe('1997 · Mio Studio · video game')
+  })
+
+  it('previews a Wikipedia cover and applies it only after explicit confirmation', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          search: [{ id: 'Q123', label: 'Provider title', description: 'video game' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ entities: {} }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ claims: {} }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          entities: {
+            Q123: {
+              sitelinks: {
+                enwiki: {
+                  title: 'Provider title',
+                  url: 'https://en.wikipedia.org/wiki/Provider_title',
+                },
+              },
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          originalimage: { source: 'https://upload.wikimedia.org/provider-title.png' },
+        }),
+      }))
+    const form = reactive(createForm({ coverUrl: 'https://example.test/current.png' }))
+    const wrapper = mountForm(form)
+
+    await wrapper.get('.metadata-assistant-action').trigger('click')
+    await vi.runAllTimersAsync()
+    await wrapper.get('.wikidata-suggestion').trigger('click')
+    await vi.runAllTimersAsync()
+
+    expect(form.coverUrl).toBe('https://example.test/current.png')
+    expect(wrapper.find('.metadata-cover-suggestion').exists()).toBe(true)
+
+    await wrapper.get('.metadata-cover-suggestion button').trigger('click')
+
+    expect(form.coverUrl).toBe('https://upload.wikimedia.org/provider-title.png')
+    expect(form.coverSourcePageUrl).toBe('https://en.wikipedia.org/wiki/Provider_title')
+    expect(form.wikipediaTitle).toBe('Provider title')
   })
 
   it('updates status through the select model path and reacts to conditional fields', async () => {

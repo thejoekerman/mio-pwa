@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getWikidataGameMetadata, searchWikidataGames } from './wikidataClient'
+import {
+  getWikidataGameMetadata,
+  getWikipediaCoverSuggestion,
+  searchWikidataGames,
+} from './wikidataClient'
 
 function jsonResponse(payload: unknown, ok = true) {
   return {
@@ -114,5 +118,41 @@ describe('getWikidataGameMetadata', () => {
       publisher: null,
       releaseYear: null,
     })
+  })
+})
+
+describe('getWikipediaCoverSuggestion', () => {
+  it('resolves an English Wikipedia article and prefers its original lead image', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        entities: {
+          Q1: {
+            sitelinks: {
+              enwiki: {
+                title: 'Game One',
+                url: 'https://en.wikipedia.org/wiki/Game_One',
+              },
+            },
+          },
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        originalimage: { source: 'https://upload.wikimedia.org/game-one.png' },
+        thumbnail: { source: 'https://upload.wikimedia.org/game-one-thumb.png' },
+      })))
+
+    await expect(getWikipediaCoverSuggestion('Q1')).resolves.toEqual({
+      articleTitle: 'Game One',
+      imageUrl: 'https://upload.wikimedia.org/game-one.png',
+      pageUrl: 'https://en.wikipedia.org/wiki/Game_One',
+    })
+  })
+
+  it('returns null when no English Wikipedia artwork is available', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      entities: { Q1: { sitelinks: {} } },
+    })))
+
+    await expect(getWikipediaCoverSuggestion('Q1')).resolves.toBeNull()
   })
 })

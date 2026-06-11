@@ -121,6 +121,9 @@ function createBacklogStore() {
     tags: '',
     igdbId: '',
     wikidataId: '',
+    wikipediaTitle: '',
+    coverSourceUrl: '',
+    coverSourcePageUrl: '',
     releaseYear: '',
     priority: '',
     developer: '',
@@ -501,6 +504,9 @@ function createBacklogStore() {
     gameForm.tags = ''
     gameForm.igdbId = ''
     gameForm.wikidataId = ''
+    gameForm.wikipediaTitle = ''
+    gameForm.coverSourceUrl = ''
+    gameForm.coverSourcePageUrl = ''
     gameForm.releaseYear = ''
     gameForm.priority = ''
     gameForm.developer = ''
@@ -532,6 +538,12 @@ function createBacklogStore() {
     gameForm.igdbId = game.igdbId === null ? '' : String(game.igdbId)
     gameForm.wikidataId =
       game.externalReferences?.find((reference) => reference.provider === 'wikidata')?.externalId ?? ''
+    gameForm.wikipediaTitle =
+      game.externalReferences?.find((reference) => reference.provider === 'wikipedia')?.externalId ?? ''
+    gameForm.coverSourceUrl = game.coverSource?.provider === 'wikipedia' ? game.coverUrl ?? '' : ''
+    gameForm.coverSourcePageUrl = game.coverSource?.provider === 'wikipedia'
+      ? game.coverSource.pageUrl ?? ''
+      : ''
     gameForm.releaseYear = game.releaseYear ? String(game.releaseYear) : ''
     gameForm.priority = game.priority ?? ''
     gameForm.developer = game.developer ?? ''
@@ -745,13 +757,23 @@ function createBacklogStore() {
       const normalizedReleaseYear = normalizeReleaseYear(gameForm.releaseYear)
       const wikidataId = /^Q\d+$/.test(gameForm.wikidataId) ? gameForm.wikidataId : ''
       const existingExternalReferences = existingPlain?.externalReferences ?? []
+      const wikipediaTitle = gameForm.wikipediaTitle.trim()
       const externalReferences = [
-        ...existingExternalReferences.filter((reference) => reference.provider !== 'wikidata'),
+        ...existingExternalReferences.filter(
+          (reference) => reference.provider !== 'wikidata' && reference.provider !== 'wikipedia',
+        ),
         ...(wikidataId
           ? [{
               provider: 'wikidata' as const,
               externalId: wikidataId,
               url: `https://www.wikidata.org/wiki/${wikidataId}`,
+            }]
+          : []),
+        ...(wikipediaTitle && gameForm.coverSourcePageUrl
+          ? [{
+              provider: 'wikipedia' as const,
+              externalId: wikipediaTitle,
+              url: gameForm.coverSourcePageUrl,
             }]
           : []),
       ]
@@ -803,6 +825,10 @@ function createBacklogStore() {
         developer: manualDeveloper || null,
         publisher: manualPublisher || null,
         coverUrl: manualCoverUrl || (shouldPreserveIgdbMetadata ? existingPlain?.coverUrl ?? null : null),
+        coverSource:
+          manualCoverUrl && manualCoverUrl === gameForm.coverSourceUrl && gameForm.coverSourcePageUrl
+            ? { provider: 'wikipedia', pageUrl: gameForm.coverSourcePageUrl }
+            : { provider: 'manual', pageUrl: null },
         review: gameForm.review.trim(),
         finishedAt:
           gameForm.status === 'finished'
