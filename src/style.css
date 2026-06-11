@@ -2047,6 +2047,31 @@ h3 {
   line-height: 1.4;
 }
 
+.form-section-heading-with-action {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.form-section-heading-with-action > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.metadata-assistant-action {
+  flex: 0 0 auto;
+  padding-block: 0.45rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.metadata-assistant-action:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .form-panel {
   position: relative;
 }

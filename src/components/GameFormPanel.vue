@@ -269,9 +269,20 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
     </div>
 
   <form class="game-form" novalidate @submit.prevent="emit('save')">
-      <div class="form-section-heading">
-        <p class="section-kicker">{{ t('form.gameDetails') }}</p>
-        <p>{{ t('form.gameDetailsHint') }}</p>
+      <div class="form-section-heading form-section-heading-with-action">
+        <div>
+          <p class="section-kicker">{{ t('form.gameDetails') }}</p>
+          <p>{{ t('form.gameDetailsHint') }}</p>
+        </div>
+        <button
+          v-if="form.id"
+          class="mini-button metadata-assistant-action"
+          type="button"
+          :disabled="form.title.trim().length < 3 || isSearchingWikidata"
+          @click="searchCurrentTitle"
+        >
+          {{ isSearchingWikidata ? t('form.wikidataSearching') : t('form.findMetadata') }}
+        </button>
       </div>
 
       <VTextField
@@ -281,18 +292,6 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
         :label="t('form.title')"
         :placeholder="t('form.titlePlaceholder')"
       />
-
-      <VBtn
-        v-if="form.id"
-        class="metadata-assistant-action"
-        type="button"
-        variant="outlined"
-        :disabled="form.title.trim().length < 3 || isSearchingWikidata"
-        :loading="isSearchingWikidata"
-        @click="searchCurrentTitle"
-      >
-        {{ t('form.findMetadata') }}
-      </VBtn>
 
       <div
         v-if="isSearchingWikidata || wikidataSuggestions.length > 0 || wikidataSearchFailed || form.wikidataId"
