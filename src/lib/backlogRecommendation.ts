@@ -1,5 +1,6 @@
 import { getTimeToBeatHours } from './timeToBeat'
-import type { Game, GamePriority } from '../types'
+import { getCurrentJourney, hasActiveJourney } from './gameJourneyState'
+import type { Game, GamePriority, Journey } from '../types'
 
 export type RecommendationReason =
   | { kind: 'priority'; priority: GamePriority }
@@ -32,21 +33,32 @@ const GENERIC_TASTE_TAGS = new Set(['Action', 'Adventure', 'RPG'])
 
 export function recommendBacklogGames(
   games: Game[],
+  journeys: Journey[],
   options: RecommendBacklogGamesOptions = {},
 ): BacklogRecommendation[] {
   const limit = options.limit ?? 2
   const now = options.now ?? new Date()
   const random = options.random ?? Math.random
   const recentGameIds = options.recentGameIds ?? []
-  const candidates = games.filter((game) => game.deletedAt === null && game.status === 'backlog')
+  const journeysByGameId = groupJourneysByGameId(journeys)
+  const candidates = games.flatMap((game) => {
+    const gameJourneys = journeysByGameId.get(game.id) ?? []
+    const currentJourney = getCurrentJourney(gameJourneys)
+
+    return game.deletedAt === null &&
+      currentJourney?.status === 'backlog' &&
+      !hasActiveJourney(gameJourneys)
+      ? [{ game, journey: currentJourney }]
+      : []
+  })
 
   if (limit <= 0 || candidates.length === 0) {
     return []
   }
 
-  const tasteProfile = buildTasteProfile(games, now)
+  const tasteProfile = buildTasteProfile(games, journeys, now)
   const scored = candidates
-    .map((game) => scoreBacklogGame(game, tasteProfile, now, recentGameIds))
+    .map(({ game, journey }) => scoreBacklogGame(game, journey, tasteProfile, now, recentGameIds))
     .sort((left, right) => right.score - left.score || left.game.title.localeCompare(right.game.title))
   const topPoolSize = Math.min(scored.length, Math.max(limit * 3, 6))
   const pool = scored.slice(0, topPoolSize)
@@ -63,6 +75,7 @@ export function recommendBacklogGames(
 
 function scoreBacklogGame(
   game: Game,
+  journey: Journey,
   tasteProfile: Map<string, number>,
   now: Date,
   recentGameIds: string[],
@@ -70,10 +83,10 @@ function scoreBacklogGame(
   let score = 20
   const scoredReasons: Array<{ reason: RecommendationReason; score: number }> = []
 
-  if (game.priority) {
-    const priorityScore = PRIORITY_SCORE[game.priority]
+  if (journey.priority) {
+    const priorityScore = PRIORITY_SCORE[journey.priority]
     score += priorityScore
-    scoredReasons.push({ reason: { kind: 'priority', priority: game.priority }, score: priorityScore })
+    scoredReasons.push({ reason: { kind: 'priority', priority: journey.priority }, score: priorityScore })
   }
 
   const tasteMatch = bestTasteMatch(game, tasteProfile)
@@ -97,12 +110,12 @@ function scoreBacklogGame(
 
     if (timeScore > 0) {
       scoredReasons.push({ reason: { kind: 'timeToBeat', hours: timeToBeatHours }, score: timeScore })
-    } else if (timeToBeatHours >= 60 && game.priority === 'high-interest') {
+    } else if (timeToBeatHours >= 60 && journey.priority === 'high-interest') {
       scoredReasons.push({ reason: { kind: 'bigAdventure', hours: timeToBeatHours }, score: 8 })
     }
   }
 
-  const waitingMonths = getWaitingMonths(game.createdAt, now)
+  const waitingMonths = getWaitingMonths(journey.createdAt, now)
   const waitingScore = scoreWaitingTime(waitingMonths)
   score += waitingScore
 
@@ -124,28 +137,40 @@ function scoreBacklogGame(
   }
 }
 
-function buildTasteProfile(games: Game[], now: Date) {
+function buildTasteProfile(games: Game[], journeys: Journey[], now: Date) {
   const profile = new Map<string, number>()
-  const likedGames = games.filter(
-    (game) =>
-      game.deletedAt === null &&
-      game.status === 'finished' &&
-      game.rating !== null,
-  )
+  const gameById = new Map(games.filter((game) => game.deletedAt === null).map((game) => [game.id, game]))
+  const weightsByGameAndTag = new Map<string, Map<string, number>>()
 
-  for (const game of likedGames) {
-    const ratingWeight = getRatingTasteWeight(game.rating)
+  for (const journey of journeys) {
+    const game = gameById.get(journey.gameId)
+
+    if (!game || journey.deletedAt !== null || journey.status !== 'finished' || journey.rating === null) {
+      continue
+    }
+
+    const ratingWeight = getRatingTasteWeight(journey.rating)
 
     if (ratingWeight === 0) {
       continue
     }
 
-    const recencyWeight = getFinishedRecencyWeight(game, now)
+    const recencyWeight = getFinishedRecencyWeight(journey, now)
     const weight = ratingWeight * recencyWeight
+    const gameWeights = weightsByGameAndTag.get(game.id) ?? new Map<string, number>()
 
-    for (const tag of [...game.tags, ...(game.igdbThemes ?? [])]) {
+    for (const tag of tasteTags(game)) {
       const tagWeight = GENERIC_TASTE_TAGS.has(tag) ? weight * 0.6 : weight
-      profile.set(tag, (profile.get(tag) ?? 0) + tagWeight)
+      gameWeights.set(tag, (gameWeights.get(tag) ?? 0) + tagWeight)
+    }
+
+    weightsByGameAndTag.set(game.id, gameWeights)
+  }
+
+  for (const gameWeights of weightsByGameAndTag.values()) {
+    for (const [tag, weight] of gameWeights) {
+      const cappedWeight = Math.max(-2, Math.min(5, weight))
+      profile.set(tag, (profile.get(tag) ?? 0) + cappedWeight)
     }
   }
 
@@ -155,7 +180,7 @@ function buildTasteProfile(games: Game[], now: Date) {
 function bestTasteMatch(game: Game, tasteProfile: Map<string, number>) {
   let best: { tag: string; score: number } | null = null
 
-  for (const tag of [...game.tags, ...(game.igdbThemes ?? [])]) {
+  for (const tag of tasteTags(game)) {
     const score = tasteProfile.get(tag) ?? 0
 
     if (score !== 0 && (!best || score > best.score)) {
@@ -164,6 +189,10 @@ function bestTasteMatch(game: Game, tasteProfile: Map<string, number>) {
   }
 
   return best
+}
+
+function tasteTags(game: Game) {
+  return [...new Set([...game.tags, ...(game.genres ?? []), ...(game.themes ?? [])])]
 }
 
 function getRatingTasteWeight(rating: number | null) {
@@ -177,8 +206,8 @@ function getRatingTasteWeight(rating: number | null) {
   return -1
 }
 
-function getFinishedRecencyWeight(game: Game, now: Date) {
-  const referenceDate = game.finishedAt ?? game.updatedAt
+function getFinishedRecencyWeight(journey: Journey, now: Date) {
+  const referenceDate = journey.finishedAt ?? journey.updatedAt
   const finishedTime = new Date(referenceDate).getTime()
 
   if (!Number.isFinite(finishedTime)) {
@@ -193,6 +222,18 @@ function getFinishedRecencyWeight(game: Game, now: Date) {
   if (days <= 365) return 0.7
 
   return 0.4
+}
+
+function groupJourneysByGameId(journeys: Journey[]) {
+  const grouped = new Map<string, Journey[]>()
+
+  for (const journey of journeys) {
+    const gameJourneys = grouped.get(journey.gameId) ?? []
+    gameJourneys.push(journey)
+    grouped.set(journey.gameId, gameJourneys)
+  }
+
+  return grouped
 }
 
 function scoreTimeToBeat(hours: number) {

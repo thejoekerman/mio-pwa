@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { recommendBacklogGames } from './backlogRecommendation'
-import type { Game } from '../types'
+import { recommendBacklogGames as recommendBacklogGamesWithJourneys } from './backlogRecommendation'
+import type { Game, Journey } from '../types'
 
 function makeGame(overrides: Partial<Game> = {}): Game {
   return {
@@ -32,6 +32,36 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     deletedAt: null,
     ...overrides,
   }
+}
+
+function makeJourney(game: Game, overrides: Partial<Journey> = {}): Journey {
+  return {
+    id: `${game.id}:journey`,
+    gameId: game.id,
+    status: game.status,
+    platform: game.platform,
+    ownershipType: game.ownershipType,
+    priority: game.priority ?? null,
+    rating: game.rating,
+    review: game.review,
+    playTimeHours: game.playTimeHours,
+    startedAt: null,
+    finishedAt: game.finishedAt,
+    pausedAt: game.pausedAt,
+    nudgeAt: game.nudgeAt,
+    createdAt: game.createdAt,
+    updatedAt: game.updatedAt,
+    deletedAt: game.deletedAt,
+    ...overrides,
+  }
+}
+
+function recommendBacklogGames(
+  games: Game[],
+  options: Parameters<typeof recommendBacklogGamesWithJourneys>[2] = {},
+  journeys = games.map((game) => makeJourney(game)),
+) {
+  return recommendBacklogGamesWithJourneys(games, journeys, options)
 }
 
 describe('recommendBacklogGames', () => {
@@ -150,5 +180,95 @@ describe('recommendBacklogGames', () => {
 
     expect(recommendations).toHaveLength(2)
     expect(new Set(recommendations.map((recommendation) => recommendation.game.id)).size).toBe(2)
+  })
+
+  it('excludes a Game with an active replay even when it also has a backlog Journey', () => {
+    const game = makeGame({ id: 'replay', title: 'Replay' })
+    const recommendations = recommendBacklogGames(
+      [game],
+      { now, random: () => 0 },
+      [
+        makeJourney(game, { id: 'backlog', status: 'backlog' }),
+        makeJourney(game, { id: 'active', status: 'playing' }),
+      ],
+    )
+
+    expect(recommendations).toEqual([])
+  })
+
+  it('uses every rated finished Journey as taste input', () => {
+    const favorite = makeGame({ id: 'favorite', title: 'Favorite', tags: ['Cozy'] })
+    const match = makeGame({ id: 'match', title: 'Match', tags: ['Cozy'] })
+    const other = makeGame({ id: 'other', title: 'Other', tags: ['Horror'] })
+    const recommendations = recommendBacklogGames(
+      [favorite, match, other],
+      { now, limit: 1, random: () => 0 },
+      [
+        makeJourney(favorite, { id: 'favorite-first', status: 'finished', rating: 9 }),
+        makeJourney(favorite, { id: 'favorite-replay', status: 'finished', rating: 10 }),
+        makeJourney(match),
+        makeJourney(other),
+      ],
+    )
+
+    expect(recommendations[0].game.id).toBe('match')
+    expect(recommendations[0].reasons).toContainEqual({ kind: 'taste', tag: 'Cozy' })
+  })
+
+  it('uses canonical genres and themes as taste metadata', () => {
+    const favorite = makeGame({ id: 'favorite', title: 'Favorite', themes: ['Mystery'] })
+    const match = makeGame({ id: 'match', title: 'Match', genres: ['Mystery'] })
+    const recommendations = recommendBacklogGames(
+      [favorite, match],
+      { now, limit: 1, random: () => 0 },
+      [
+        makeJourney(favorite, { status: 'finished', rating: 10 }),
+        makeJourney(match),
+      ],
+    )
+
+    expect(recommendations[0].game.id).toBe('match')
+    expect(recommendations[0].reasons).toContainEqual({ kind: 'taste', tag: 'Mystery' })
+  })
+
+  it('caps repeated Journey taste weight per Game', () => {
+    const repeated = makeGame({ id: 'repeated', title: 'Repeated', tags: ['Cozy'] })
+    const distinctOne = makeGame({ id: 'distinct-one', title: 'Distinct One', tags: ['Horror'] })
+    const distinctTwo = makeGame({ id: 'distinct-two', title: 'Distinct Two', tags: ['Horror'] })
+    const cozyMatch = makeGame({ id: 'cozy-match', title: 'Cozy Match', tags: ['Cozy'] })
+    const horrorMatch = makeGame({ id: 'horror-match', title: 'Horror Match', tags: ['Horror'] })
+    const repeatedJourneys = Array.from({ length: 8 }, (_, index) =>
+      makeJourney(repeated, { id: `repeat-${index}`, status: 'finished', rating: 10 }),
+    )
+
+    const recommendations = recommendBacklogGames(
+      [repeated, distinctOne, distinctTwo, cozyMatch, horrorMatch],
+      { now, limit: 1, random: () => 0 },
+      [
+        ...repeatedJourneys,
+        makeJourney(distinctOne, { status: 'finished', rating: 10 }),
+        makeJourney(distinctTwo, { status: 'finished', rating: 10 }),
+        makeJourney(cozyMatch),
+        makeJourney(horrorMatch),
+      ],
+    )
+
+    expect(recommendations[0].game.id).toBe('horror-match')
+  })
+
+  it('uses backlog Journey priority and waiting age', () => {
+    const oldGame = makeGame({ id: 'old', title: 'Old', createdAt: '2026-05-01T00:00:00.000Z' })
+    const priorityGame = makeGame({ id: 'priority', title: 'Priority', priority: null })
+    const recommendations = recommendBacklogGames(
+      [oldGame, priorityGame],
+      { now, limit: 1, random: () => 0 },
+      [
+        makeJourney(oldGame, { createdAt: '2024-01-01T00:00:00.000Z' }),
+        makeJourney(priorityGame, { priority: 'high-interest' }),
+      ],
+    )
+
+    expect(recommendations[0].game.id).toBe('priority')
+    expect(recommendations[0].reasons).toContainEqual({ kind: 'priority', priority: 'high-interest' })
   })
 })

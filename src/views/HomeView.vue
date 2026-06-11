@@ -27,6 +27,7 @@ const {
   finishedYearOptions,
   formatDate,
   games,
+  journeys,
   logDraft,
   logs,
   recentLogs,
@@ -278,7 +279,7 @@ function goToHomeGame(index: number) {
 }
 
 function refreshBacklogRecommendations() {
-  const recommendations = recommendBacklogGames(games.value, {
+  const recommendations = recommendBacklogGames(games.value, journeys.value, {
     limit: 2,
     recentGameIds: recentRecommendationIds.value,
   })

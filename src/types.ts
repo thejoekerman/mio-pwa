@@ -167,6 +167,9 @@ export interface Game {
   platform: string
   ownershipType: GameOwnershipType | null
   tags: string[]
+  genres?: string[]
+  themes?: string[]
+  gameModes?: string[]
   igdbId: number | null
   igdbUrl?: string | null
   igdbTtbHastilySeconds?: number | null

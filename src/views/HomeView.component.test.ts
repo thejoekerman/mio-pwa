@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import HomeView from './HomeView.vue'
-import type { Game } from '../types'
+import type { Game, Journey } from '../types'
 import type { Ref } from 'vue'
 
 interface HomeBacklogState {
@@ -14,6 +14,7 @@ interface HomeBacklogState {
   finishedYearOptions: Ref<string[]>
   formatDate: ReturnType<typeof vi.fn>
   games: Ref<Game[]>
+  journeys: Ref<Journey[]>
   logDraft: Ref<string>
   logs: Ref<unknown[]>
   recentLogs: Ref<unknown[]>
@@ -84,6 +85,7 @@ vi.mock('../composables/useBacklog', async () => {
     finishedYearOptions: ref<string[]>([]),
     formatDate: vi.fn((value: string) => value),
     games: ref<Game[]>([]),
+    journeys: ref<Journey[]>([]),
     logDraft: ref(''),
     logs: ref([]),
     recentLogs: ref([]),
