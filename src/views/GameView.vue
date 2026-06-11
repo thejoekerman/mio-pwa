@@ -17,6 +17,7 @@ const {
   generateReviewDraft,
   games,
   isDraftingReview,
+  journeyLogs,
   localReviewProgress,
   logDraft,
   logs,
@@ -50,6 +51,12 @@ watch(
 )
 
 const gameExists = computed(() => games.value.some((game) => game.id === routeGameId.value))
+const selectedGameJourneyIds = computed(() =>
+  new Set(selectedGameJourneys.value.map((journey) => journey.id)),
+)
+const selectedGameJourneyLogs = computed(() =>
+  journeyLogs.value.filter((log) => selectedGameJourneyIds.value.has(log.journeyId)),
+)
 
 function handleReviewCopied() {
   setFeedback(t('feedback.reviewCopied'))
@@ -90,6 +97,7 @@ function handleJournalExported() {
       :selected-journey="selectedJourney"
       :selected-journey-id="selectedJourneyId"
       :journeys="selectedGameJourneys"
+      :journey-logs="selectedGameJourneyLogs"
       :selected-game-display-status="selectedJourneyDisplayStatus"
       @apply-review-draft="applyReviewDraft"
       @discard-review-draft="discardReviewDraft"

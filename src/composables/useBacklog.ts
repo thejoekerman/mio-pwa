@@ -4,6 +4,7 @@ import {
   ensureDemoData,
   getAllEarnedTrophies,
   getAllGames,
+  getAllJourneyLogs,
   getAllJourneys,
   getAllLogs,
   getLogsForGame,
@@ -51,6 +52,7 @@ import type {
   GameStatus,
   LibraryStatusFilter,
   Journey,
+  JourneyLogEntry,
   LibraryCsvImportResult,
   LogEntry,
   TrophyUnlockSource,
@@ -74,6 +76,7 @@ function createBacklogStore() {
   const selectedJourneyId = ref<string | null>(null)
   const logs = ref<LogEntry[]>([])
   const allLogs = ref<LogEntry[]>([])
+  const journeyLogs = ref<JourneyLogEntry[]>([])
   const earnedTrophies = ref<EarnedTrophy[]>([])
   const trophyUnlockQueue = ref<EarnedTrophy[]>([])
   const latestTrophyUnlockSource = ref<TrophyUnlockSource | null>(null)
@@ -552,16 +555,18 @@ function createBacklogStore() {
   }
 
   async function loadGames() {
-    const [allGames, storedJourneys, storedLogs, storedTrophies] = await Promise.all([
+    const [allGames, storedJourneys, storedLogs, storedJourneyLogs, storedTrophies] = await Promise.all([
       getAllGames(),
       getAllJourneys(),
       getAllLogs(),
+      getAllJourneyLogs(),
       getAllEarnedTrophies(),
     ])
 
     games.value = allGames
     journeys.value = storedJourneys
     allLogs.value = storedLogs
+    journeyLogs.value = storedJourneyLogs
     earnedTrophies.value = storedTrophies
     totalPlayLogCount.value = storedLogs.length
 
@@ -1337,6 +1342,7 @@ function createBacklogStore() {
     isSyncing,
     isTestingSyncConnection,
     journeys,
+    journeyLogs,
     localReviewProgress,
     logDraft,
     logs,

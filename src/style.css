@@ -3130,6 +3130,60 @@ textarea:focus {
   height: 16px;
 }
 
+.detail-history-toggle {
+  min-height: 34px;
+  padding: 0 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.detail-history-toggle.active {
+  border-color: var(--panel-accent-border);
+  background: var(--panel-accent);
+  color: var(--accent-strong);
+}
+
+.journey-log-history,
+.journey-log-group {
+  display: grid;
+  gap: 10px;
+}
+
+.journey-log-history {
+  gap: 18px;
+}
+
+.journey-log-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.journey-log-group-heading span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.journey-log-group-heading small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.journey-log-group .log-entry {
+  display: grid;
+  gap: 10px;
+}
+
 .detail-log-title {
   display: flex;
   flex-wrap: wrap;

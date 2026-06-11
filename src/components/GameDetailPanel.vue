@@ -9,8 +9,9 @@ import {
   downloadMarkdownFile,
 } from '../lib/journalExport'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
+import { getLifetimePlayTime, groupJourneyLogs } from '../lib/gameJourneyHistory'
 import { getTimeToBeatHours } from '../lib/timeToBeat'
-import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type Journey, type LogEntry } from '../types'
+import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type Journey, type JourneyLogEntry, type LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
 const router = useRouter()
@@ -29,6 +30,7 @@ const props = defineProps<{
   selectedJourney: Journey | null
   selectedJourneyId: string | null
   journeys: Journey[]
+  journeyLogs: JourneyLogEntry[]
   selectedGameDisplayStatus: GameDisplayStatus | null
   changeGameStatus: (status: GameStatus) => void | Promise<void>
 }>()
@@ -51,6 +53,7 @@ const emit = defineEmits<{
 
 const addTimeInput = ref('')
 const addTimeMenuOpen = ref(false)
+const showAllJourneyLogs = ref(false)
 const parsedAddTime = computed(() => {
   const n = Number.parseFloat(addTimeInput.value.replace(',', '.'))
   return Number.isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : null
@@ -75,6 +78,14 @@ const canSaveEditingLog = computed(
 )
 const canShareJournal = computed(() =>
   Boolean(props.selectedGame && (props.logs.length > 0 || props.selectedGame.review.trim())),
+)
+const lifetimePlayTime = computed(() => getLifetimePlayTime(props.journeys))
+const journeyLogGroups = computed(() =>
+  groupJourneyLogs(props.journeys, props.journeyLogs)
+    .map((group) => ({
+      ...group,
+      title: journeyTitle(props.journeys.findIndex((journey) => journey.id === group.journey.id)),
+    })),
 )
 const journalMarkdown = computed(() => {
   if (!props.selectedGame) {
@@ -115,6 +126,7 @@ const detailMetadata = computed(() => {
     game.ownershipType ? ownershipLabel(game.ownershipType) : null,
     game.rating !== null ? `${game.rating}/10` : null,
     game.playTimeHours !== null ? `${game.playTimeHours} h` : null,
+    lifetimePlayTime.value !== null ? t('detail.lifetimePlayTime', { hours: lifetimePlayTime.value }) : null,
     game.releaseYear ? String(game.releaseYear) : null,
     formatTimeToBeat(game) ? `${formatTimeToBeat(game)} TTB` : null,
     igdbCreditLine(game),
@@ -217,7 +229,7 @@ function exportJournal() {
   emit('journalExported')
 }
 
-function wasEdited(log: LogEntry) {
+function wasEdited(log: Pick<LogEntry, 'createdAt' | 'updatedAt'>) {
   return new Date(log.updatedAt).getTime() > new Date(log.createdAt).getTime()
 }
 
@@ -247,6 +259,11 @@ function journeyDate(journey: Journey) {
 
 function journeySubtitle(journey: Journey) {
   return `${statusLabel(journey.status)} · ${journeyDate(journey)} · ${journey.platform || t('detail.anywhere')}`
+}
+
+function selectHistoryJourney(journeyId: string) {
+  showAllJourneyLogs.value = false
+  emit('selectJourney', journeyId)
 }
 
 function igdbCreditLine(game: Game) {
@@ -495,9 +512,18 @@ function igdbCreditLine(game: Game) {
         <div class="section-heading compact detail-log-header">
           <div class="detail-log-title">
             <p class="section-kicker">{{ t('detail.sessionNotes') }}</p>
-            <span class="detail-log-count">{{ logs.length }}</span>
+            <span class="detail-log-count">{{ showAllJourneyLogs ? journeyLogs.length : logs.length }}</span>
           </div>
           <div class="detail-log-actions">
+            <button
+              v-if="journeys.length > 1"
+              class="detail-history-toggle"
+              type="button"
+              :class="{ active: showAllJourneyLogs }"
+              @click="showAllJourneyLogs = !showAllJourneyLogs"
+            >
+              {{ showAllJourneyLogs ? t('detail.selectedJourneyLogs') : t('detail.allJourneyLogs') }}
+            </button>
             <button
               class="icon-button"
               type="button"
@@ -528,7 +554,7 @@ function igdbCreditLine(game: Game) {
           </div>
         </div>
 
-        <form class="log-form" @submit.prevent="emit('saveLog')">
+        <form v-if="!showAllJourneyLogs" class="log-form" @submit.prevent="emit('saveLog')">
           <VTextarea
             class="form-control"
             :model-value="logDraft"
@@ -543,7 +569,32 @@ function igdbCreditLine(game: Game) {
           </VBtn>
         </form>
 
-        <div v-if="logs.length > 0" class="log-list">
+        <div v-if="showAllJourneyLogs && journeyLogGroups.length > 0" class="journey-log-history">
+          <section v-for="group in journeyLogGroups" :key="group.journey.id" class="journey-log-group">
+            <button
+              type="button"
+              class="journey-log-group-heading"
+              @click="selectHistoryJourney(group.journey.id)"
+            >
+              <span>
+                <strong>{{ group.title }}</strong>
+                <small>{{ journeySubtitle(group.journey) }}</small>
+              </span>
+              <span class="detail-log-count">{{ group.logs.length }}</span>
+            </button>
+            <article v-for="log in group.logs" :key="log.id" class="log-entry compact">
+              <div class="log-entry-meta">
+                <time>{{ formatDate(log.createdAt) }}</time>
+                <span v-if="wasEdited(log)" class="log-entry-edited">
+                  {{ t('detail.editedLog', { date: formatDate(log.updatedAt) }) }}
+                </span>
+              </div>
+              <p>{{ log.content }}</p>
+            </article>
+          </section>
+        </div>
+
+        <div v-else-if="!showAllJourneyLogs && logs.length > 0" class="log-list">
           <article v-for="log in logs" :key="log.id" class="log-entry">
             <div class="log-entry-header">
               <div class="log-entry-meta">
