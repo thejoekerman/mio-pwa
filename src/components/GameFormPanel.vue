@@ -10,21 +10,14 @@ import {
   type GameFormState,
 } from '../types'
 import {
-  wikidataEntityIdsFromClaims,
-  wikidataEntityLabelMap,
-  wikidataReleaseYearFromClaims,
-  tagsFromGenreLabel,
-} from '../lib/wikidataUtils'
+  getWikidataGameMetadata,
+  searchWikidataGames,
+  type WikidataGameSuggestion,
+} from '../lib/wikidataClient'
 import { addDaysDate } from '../lib/dateUtils'
 import { isOffline } from '../lib/network'
 import { dedupeTags } from '../lib/tags'
 const { statusLabel, t, tagLabel } = useI18n()
-
-interface WikidataSuggestion {
-  id: string
-  title: string
-  description: string
-}
 
 const {
   canRateCurrentStatus,
@@ -50,7 +43,7 @@ const emit = defineEmits<{
   save: []
 }>()
 
-const wikidataSuggestions = ref<WikidataSuggestion[]>([])
+const wikidataSuggestions = ref<WikidataGameSuggestion[]>([])
 const isSearchingWikidata = ref(false)
 const wikidataSearchFailed = ref(false)
 let wikidataSearchTimer: number | null = null
@@ -202,27 +195,7 @@ async function searchWikidataTitles(title: string) {
   isSearchingWikidata.value = true
 
   try {
-    const params = new URLSearchParams({
-      action: 'wbsearchentities',
-      format: 'json',
-      language: 'en',
-      uselang: 'en',
-      origin: '*',
-      limit: '8',
-      search: title,
-    })
-    const response = await fetch(`https://www.wikidata.org/w/api.php?${params.toString()}`, {
-      signal: wikidataAbortController.signal,
-    })
-
-    if (!response.ok) {
-      throw new Error('Wikidata search failed.')
-    }
-
-    const payload = await response.json() as { search?: unknown[] }
-    wikidataSuggestions.value = Array.isArray(payload.search)
-      ? payload.search.flatMap(wikidataSuggestionFromEntity).slice(0, 4)
-      : []
+    wikidataSuggestions.value = await searchWikidataGames(title, wikidataAbortController.signal)
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       return
@@ -235,42 +208,14 @@ async function searchWikidataTitles(title: string) {
   }
 }
 
-function wikidataSuggestionFromEntity(entity: unknown): WikidataSuggestion[] {
-  if (!entity || typeof entity !== 'object') {
-    return []
-  }
-
-  const record = entity as Record<string, unknown>
-  const id = typeof record.id === 'string' ? record.id : ''
-  const title = typeof record.label === 'string' ? record.label : ''
-  const description = typeof record.description === 'string' ? record.description : ''
-
-  if (!id || !title || !isLikelyVideoGameDescription(description)) {
-    return []
-  }
-
-  return [
-    {
-      id,
-      title,
-      description,
-    },
-  ]
-}
-
-function isLikelyVideoGameDescription(description: string) {
-  return (
-    /video game|computer game/i.test(description) &&
-    !/soundtrack|podcast|film|theme/i.test(description)
-  )
-}
-
-async function useWikidataSuggestion(suggestion: WikidataSuggestion) {
+async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
   form.value.title = suggestion.title
   wikidataSuggestions.value = []
   wikidataSearchFailed.value = false
 
-  const { tags, developer, publisher, releaseYear } = await getWikidataMetadata(suggestion.id)
+  const { tags, developer, publisher, releaseYear } = isOffline()
+    ? { tags: [], developer: null, publisher: null, releaseYear: null }
+    : await getWikidataGameMetadata(suggestion.id)
 
   if (tags.length > 0) {
     setTags([...selectedTags.value, ...tags])
@@ -283,66 +228,6 @@ async function useWikidataSuggestion(suggestion: WikidataSuggestion) {
   }
   if (releaseYear !== null && !form.value.releaseYear.trim()) {
     form.value.releaseYear = String(releaseYear)
-  }
-}
-
-async function getWikidataMetadata(itemId: string) {
-  const empty = { tags: [] as string[], developer: null as string | null, publisher: null as string | null, releaseYear: null as number | null }
-
-  if (isOffline()) {
-    return empty
-  }
-
-  try {
-    const claimsParams = new URLSearchParams({
-      action: 'wbgetclaims',
-      format: 'json',
-      origin: '*',
-      entity: itemId,
-    })
-    const claimsResponse = await fetch(`https://www.wikidata.org/w/api.php?${claimsParams.toString()}`)
-
-    if (!claimsResponse.ok) {
-      return empty
-    }
-
-    const claimsData = await claimsResponse.json()
-    const genreIds = wikidataEntityIdsFromClaims(claimsData, 'P136').slice(0, 6)
-    const developerIds = wikidataEntityIdsFromClaims(claimsData, 'P178').slice(0, 1)
-    const publisherIds = wikidataEntityIdsFromClaims(claimsData, 'P123').slice(0, 1)
-    const releaseYear = wikidataReleaseYearFromClaims(claimsData)
-
-    const entityIds = [...genreIds, ...developerIds, ...publisherIds]
-
-    if (entityIds.length === 0) {
-      return { ...empty, releaseYear }
-    }
-
-    const labelParams = new URLSearchParams({
-      action: 'wbgetentities',
-      format: 'json',
-      languages: 'en',
-      languagefallback: '1',
-      origin: '*',
-      props: 'labels',
-      ids: entityIds.join('|'),
-    })
-    const labelResponse = await fetch(`https://www.wikidata.org/w/api.php?${labelParams.toString()}`)
-
-    if (!labelResponse.ok) {
-      return { ...empty, releaseYear }
-    }
-
-    const labelMap = wikidataEntityLabelMap(await labelResponse.json())
-    const tags = [
-      ...new Set(genreIds.map((id) => labelMap[id]).filter((l): l is string => Boolean(l)).flatMap(tagsFromGenreLabel)),
-    ].slice(0, 3)
-    const developer = developerIds.length > 0 ? (labelMap[developerIds[0]] ?? null) : null
-    const publisher = publisherIds.length > 0 ? (labelMap[publisherIds[0]] ?? null) : null
-
-    return { tags, developer, publisher, releaseYear }
-  } catch {
-    return empty
   }
 }
 
