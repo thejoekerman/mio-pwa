@@ -84,6 +84,10 @@ async function loadBacklog(opts: { seedGames?: Game[]; seedJourneys?: Journey[] 
       }
     }),
     deleteGame: vi.fn().mockResolvedValue(undefined),
+    deleteJourney: vi.fn().mockImplementation(async (journeyId: string) => {
+      savedJourneys = savedJourneys.filter((journey) => journey.id !== journeyId)
+      return true
+    }),
     saveLogEntry: vi.fn().mockResolvedValue(undefined),
     saveLogEntryForJourney: vi.fn().mockResolvedValue(undefined),
     saveEarnedTrophies: vi.fn().mockResolvedValue(undefined),
@@ -539,6 +543,29 @@ describe('useBacklog', () => {
 
       expect(store.games.value.some((g) => g.id === 'gx')).toBe(false)
       expect(store.gameForm.id).toBeNull()
+    })
+  })
+
+  describe('removeJourney', () => {
+    it('removes one Journey while preserving the Game and remaining Journey', async () => {
+      const game = makeGame({ id: 'multi' })
+      const first = makeJourney(game, { id: 'first', status: 'finished' })
+      const replay = makeJourney(game, { id: 'replay', status: 'playing' })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [first, replay] })
+
+      expect(await store.removeJourney(replay)).toBe(true)
+      expect(savedJourneys).toEqual([first])
+      expect(store.games.value).toHaveLength(1)
+      expect(store.selectedJourneyId.value).toBe(first.id)
+    })
+
+    it('refuses to delete the Game’s final Journey', async () => {
+      const game = makeGame({ id: 'only' })
+      const only = makeJourney(game)
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [only] })
+
+      expect(await store.removeJourney(only)).toBe(false)
+      expect(savedJourneys).toEqual([only])
     })
   })
 

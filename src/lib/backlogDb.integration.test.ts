@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   createBackupData,
   deleteGame,
+  deleteJourney,
   getAllEarnedTrophies,
   getAllCanonicalGames,
   getAllGames,
@@ -282,6 +283,43 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
     it('deleteGame is a no-op when the game does not exist', async () => {
       await expect(deleteGame('nonexistent')).resolves.toBeUndefined()
       expect(await getAllGames(true)).toHaveLength(0)
+    })
+
+    it('deleteJourney tombstones the Journey and its logs but preserves the Game', async () => {
+      await saveGame(makeGame({ id: 'journey-delete' }))
+      await saveJourney({
+        ...(await getAllJourneys())[0],
+        id: 'journey-delete-replay',
+      })
+      await saveLogEntryForJourney(
+        makeLog({ id: 'journey-delete-log', gameId: 'journey-delete' }),
+        'journey-delete-replay',
+      )
+
+      await deleteJourney('journey-delete-replay')
+
+      expect(await getAllGames()).toHaveLength(1)
+      expect((await getAllJourneys()).map((journey) => journey.id)).toEqual([
+        'journey-delete:initial-journey',
+      ])
+      expect(await getAllJourneyLogs()).toEqual([])
+      expect(await getAllJourneys(true)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'journey-delete-replay', deletedAt: expect.any(String) }),
+      ]))
+      expect(await getAllJourneyLogs(true)).toEqual([
+        expect.objectContaining({ id: 'journey-delete-log', deletedAt: expect.any(String) }),
+      ])
+    })
+
+    it('deleteJourney refuses to tombstone the final visible Journey', async () => {
+      await saveGame(makeGame({ id: 'journey-keep' }))
+
+      await expect(deleteJourney('journey-keep:initial-journey')).resolves.toBe(false)
+
+      expect(await getAllGames()).toHaveLength(1)
+      expect(await getAllJourneys()).toEqual([
+        expect.objectContaining({ id: 'journey-keep:initial-journey', deletedAt: null }),
+      ])
     })
   })
 

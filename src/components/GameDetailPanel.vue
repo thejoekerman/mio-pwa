@@ -47,6 +47,7 @@ const emit = defineEmits<{
   saveLog: []
   saveLogEdit: [logId: string, content: string]
   selectJourney: [journeyId: string]
+  deleteJourney: []
   startReplay: []
   updateLogDraft: [value: string]
 }>()
@@ -385,6 +386,22 @@ function igdbCreditLine(game: Game) {
             >
               {{ t('detail.startReplay') }}
             </VBtn>
+
+            <button
+              v-if="journeys.length > 1"
+              type="button"
+              class="icon-button detail-delete-journey"
+              :aria-label="t('detail.deleteJourney')"
+              :title="t('detail.deleteJourney')"
+              @click="emit('deleteJourney')"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v5M14 11v5" />
+              </svg>
+            </button>
 
             <VMenu v-model="addTimeMenuOpen" location="bottom center" :close-on-content-click="false" @update:model-value="!$event && (addTimeInput = '')">
               <template #activator="{ props: activatorProps }">

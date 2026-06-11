@@ -420,6 +420,33 @@ export async function deleteGame(gameId: string) {
   })
 }
 
+export async function deleteJourney(journeyId: string) {
+  return db.transaction('rw', db.journeys, db.logs, async () => {
+    const now = new Date().toISOString()
+    const journey = await db.journeys.get(journeyId)
+
+    if (!journey || journey.deletedAt !== null) {
+      return false
+    }
+
+    const visibleJourneys = await db.journeys.where('gameId').equals(journey.gameId).toArray()
+    if (visibleJourneys.filter((candidate) => candidate.deletedAt === null).length <= 1) {
+      return false
+    }
+
+    await db.journeys.put({ ...journey, updatedAt: now, deletedAt: now })
+
+    const logs = await db.logs.where('journeyId').equals(journeyId).toArray()
+    if (logs.length > 0) {
+      await db.logs.bulkPut(
+        logs.map((logEntry) => ({ ...logEntry, updatedAt: now, deletedAt: now })),
+      )
+    }
+
+    return true
+  })
+}
+
 export async function getLogsForGame(gameId: string) {
   const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
   const journeyIds = new Set(journeys.map((journey) => journey.id))

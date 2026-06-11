@@ -1,6 +1,7 @@
 import { computed, reactive, ref, toRaw, watch } from 'vue'
 import {
   deleteGame,
+  deleteJourney,
   ensureDemoData,
   getAllEarnedTrophies,
   getAllGames,
@@ -853,6 +854,30 @@ function createBacklogStore() {
     return true
   }
 
+  async function removeJourney(journey: Journey) {
+    const gameJourneys = journeys.value.filter(
+      (candidate) => candidate.gameId === journey.gameId && candidate.deletedAt === null,
+    )
+
+    if (gameJourneys.length <= 1) {
+      return false
+    }
+
+    const deleted = await deleteJourney(journey.id)
+    if (!deleted) {
+      return false
+    }
+
+    markLocalChange()
+    selectedJourneyId.value = null
+    await loadGames()
+    await selectGame(journey.gameId)
+    await unlockEarnedTrophies('user-action')
+    setFeedback(translate(settings.language, 'feedback.journeyDeleted'))
+    scheduleAutoSync()
+    return true
+  }
+
   async function saveCurrentLog() {
     const currentGame = selectedJourneyGame.value
     const currentJourney = selectedJourney.value
@@ -1350,6 +1375,7 @@ function createBacklogStore() {
     recentLogs,
     reviewDraftPreview,
     removeGame,
+    removeJourney,
     resetForm,
     resetDemoLibrary,
     resetLibraryFilters,

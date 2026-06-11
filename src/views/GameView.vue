@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import GameDetailPanel from '../components/GameDetailPanel.vue'
 import { useBacklog } from '../composables/useBacklog'
@@ -22,6 +22,7 @@ const {
   logDraft,
   logs,
   reviewDraftPreview,
+  removeJourney,
   saveCurrentLog,
   selectGame,
   selectJourney,
@@ -57,6 +58,16 @@ const selectedGameJourneyIds = computed(() =>
 const selectedGameJourneyLogs = computed(() =>
   journeyLogs.value.filter((log) => selectedGameJourneyIds.value.has(log.journeyId)),
 )
+const deleteJourneyDialogOpen = ref(false)
+
+async function confirmDeleteJourney() {
+  const journey = selectedJourney.value
+  deleteJourneyDialogOpen.value = false
+
+  if (journey) {
+    await removeJourney(journey)
+  }
+}
 
 function handleReviewCopied() {
   setFeedback(t('feedback.reviewCopied'))
@@ -101,6 +112,7 @@ function handleJournalExported() {
       :selected-game-display-status="selectedJourneyDisplayStatus"
       @apply-review-draft="applyReviewDraft"
       @discard-review-draft="discardReviewDraft"
+      @delete-journey="deleteJourneyDialogOpen = true"
       @draft-review="generateReviewDraft"
       @review-copied="handleReviewCopied"
       @review-copy-failed="handleReviewCopyFailed"
@@ -126,5 +138,20 @@ function handleJournalExported() {
         </p>
       </div>
     </section>
+
+    <VDialog v-model="deleteJourneyDialogOpen" class="confirm-dialog" max-width="420">
+      <VCard>
+        <VCardTitle>{{ t('detail.deleteJourney') }}</VCardTitle>
+        <VCardText>{{ t('detail.confirmDeleteJourney') }}</VCardText>
+        <VCardActions>
+          <VBtn type="button" variant="outlined" color="primary" @click="deleteJourneyDialogOpen = false">
+            {{ t('form.cancelDelete') }}
+          </VBtn>
+          <VBtn type="button" color="error" variant="flat" @click="confirmDeleteJourney">
+            {{ t('detail.deleteJourney') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </div>
 </template>
