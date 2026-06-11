@@ -409,8 +409,10 @@ function parseCsvRows(rawCsv: string) {
     skipEmptyLines: 'greedy',
   })
 
-  if (result.errors.length > 0) {
-    throw new Error(result.errors[0]?.message ?? 'CSV could not be parsed.')
+  const fatalError = result.errors.find((error) => error.code !== 'UndetectableDelimiter')
+
+  if (fatalError) {
+    throw new Error(fatalError.message || 'CSV could not be parsed.')
   }
 
   return result.data

@@ -66,6 +66,7 @@ async function loadBacklog(opts: { seedGames?: Game[]; seedJourneys?: Journey[] 
     getAllGames: vi.fn().mockResolvedValue(seedGames),
     getAllJourneys: vi.fn().mockImplementation(async () => savedJourneys),
     getAllLogs: vi.fn().mockResolvedValue([]),
+    getAllJourneyLogs: vi.fn().mockResolvedValue([]),
     getAllEarnedTrophies: vi.fn().mockResolvedValue([]),
     getLogsForGame: vi.fn().mockResolvedValue([]),
     getLogsForJourney: vi.fn().mockResolvedValue([]),
