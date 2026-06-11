@@ -41,6 +41,14 @@ export function createBackupHandlers(deps: BackupDeps) {
   }
 
   async function importBackup(payload: unknown, mode: BackupImportMode) {
+    if (
+      mode === 'replace' &&
+      settings.syncApiBaseUrl.trim() !== '' &&
+      settings.syncToken.trim() !== ''
+    ) {
+      throw new Error(translate(settings.language, 'feedback.backupReplaceSyncBlocked'))
+    }
+
     const result = await importBackupData(payload, mode)
 
     await ensureLoaded(true)

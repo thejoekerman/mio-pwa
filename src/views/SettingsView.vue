@@ -71,7 +71,7 @@ const themeOptions = computed(() =>
 )
 const importModeOptions = computed(() => [
   { title: t('settings.mergeMode'), value: 'merge' },
-  { title: t('settings.replaceMode'), value: 'replace' },
+  ...(!isSyncConfigured.value ? [{ title: t('settings.replaceMode'), value: 'replace' }] : []),
 ])
 const csvPreviewIssueSummary = computed(() => {
   const plan = csvImportPlan.value
@@ -251,6 +251,12 @@ watch(
     }
   },
 )
+
+watch(isSyncConfigured, (configured) => {
+  if (configured && importMode.value === 'replace') {
+    importMode.value = 'merge'
+  }
+})
 
 onMounted(async () => {
   webGpuAvailable.value = await detectWebGpuSupport()
@@ -446,9 +452,13 @@ async function importSelectedBackup(file: File, input: HTMLInputElement) {
         : t('feedback.backupMergedNotice', { games: result.games, logs: result.logs })
   } catch (error) {
     console.error(error)
-    setFeedback(t('feedback.importFailed'), 'error')
+    const message =
+      importMode.value === 'replace' && isSyncConfigured.value
+        ? t('feedback.backupReplaceSyncBlocked')
+        : t('feedback.importFailed')
+    setFeedback(message, 'error')
     backupNoticeTone.value = 'error'
-    backupNotice.value = t('feedback.importFailed')
+    backupNotice.value = message
   } finally {
     input.value = ''
   }
@@ -816,6 +826,9 @@ async function handleSyncNow() {
           :model-value="importMode"
           @update:model-value="updateImportMode"
         />
+        <p v-if="isSyncConfigured" class="settings-meta">
+          {{ t('settings.replaceDisabledBySync') }}
+        </p>
 
         <div class="settings-actions">
           <VBtn class="miolog-primary-action" type="button" color="primary" @click="handleExport">

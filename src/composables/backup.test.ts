@@ -155,5 +155,31 @@ describe('createBackupHandlers', () => {
       expect(message).toContain('5')
       expect(message).toContain('9')
     })
+
+    it('rejects replacement while sync is configured without touching local data', async () => {
+      const settings = makeSettings()
+      settings.syncApiBaseUrl = 'https://miolog.example.test'
+      settings.syncToken = 'secret'
+      const deps = makeDeps({ settings })
+      const { importBackup } = createBackupHandlers(deps)
+
+      await expect(importBackup(sampleBackup, 'replace')).rejects.toThrow(/disconnect sync/i)
+
+      expect(importBackupDataMock).not.toHaveBeenCalled()
+      expect(deps.ensureLoaded).not.toHaveBeenCalled()
+    })
+
+    it('still allows merge imports while sync is configured', async () => {
+      importBackupDataMock.mockResolvedValue({ games: 1, logs: 0, earnedTrophies: 0 })
+      const settings = makeSettings()
+      settings.syncApiBaseUrl = 'https://miolog.example.test'
+      settings.syncToken = 'secret'
+      const deps = makeDeps({ settings })
+      const { importBackup } = createBackupHandlers(deps)
+
+      await importBackup(sampleBackup, 'merge')
+
+      expect(importBackupDataMock).toHaveBeenCalledWith(sampleBackup, 'merge')
+    })
   })
 })
