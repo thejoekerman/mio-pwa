@@ -178,6 +178,10 @@ describe('GameFormPanel', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        json: vi.fn().mockResolvedValue({ entities: {} }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         json: vi.fn().mockResolvedValue({ claims: {} }),
       }))
     const form = reactive(createForm({ title: 'My preferred title' }))
@@ -204,6 +208,44 @@ describe('GameFormPanel', () => {
 
     expect(wrapper.text()).toContain('No likely game matches found')
     expect(wrapper.text()).not.toContain('Could not load title suggestions')
+  })
+
+  it('shows candidate disambiguation without repeating the release year', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          search: [{ id: 'Q123', label: 'Provider title', description: '1997 video game' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          entities: {
+            Q123: {
+              claims: {
+                P178: [{ mainsnak: { datavalue: { value: { id: 'Q-developer' } } } }],
+                P577: [{ mainsnak: { datavalue: { value: { time: '+1997-01-01T00:00:00Z' } } } }],
+              },
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          entities: {
+            'Q-developer': { labels: { en: { value: 'Mio Studio' } } },
+          },
+        }),
+      }))
+    const wrapper = mountForm()
+
+    await wrapper.get('.metadata-assistant-action').trigger('click')
+    await vi.runAllTimersAsync()
+
+    expect(wrapper.get('.wikidata-suggestion small').text()).toBe('1997 · Mio Studio · video game')
   })
 
   it('updates status through the select model path and reacts to conditional fields', async () => {

@@ -23,7 +23,9 @@ describe('searchWikidataGames', () => {
       { id: 'Q6', label: 'Game soundtrack', description: 'video game soundtrack' },
       { id: 'Q7', label: 'Unrelated', description: 'novel' },
     ]
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ search })))
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ search }))
+      .mockResolvedValueOnce(jsonResponse({ entities: {} })))
 
     const suggestions = await searchWikidataGames('Game')
 
@@ -31,6 +33,36 @@ describe('searchWikidataGames', () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('search=Game'), {
       signal: undefined,
     })
+  })
+
+  it('enriches visible candidates with release year and developer in batched requests', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        search: [{ id: 'Q1', label: 'Game One', description: 'video game' }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        entities: {
+          Q1: {
+            claims: {
+              P178: [{ mainsnak: { datavalue: { value: { id: 'Q-developer' } } } }],
+              P577: [{ mainsnak: { datavalue: { value: { time: '+2005-10-25T00:00:00Z' } } } }],
+            },
+          },
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        entities: {
+          'Q-developer': { labels: { en: { value: 'Mio Studio' } } },
+        },
+      })))
+
+    await expect(searchWikidataGames('Game')).resolves.toEqual([{
+      id: 'Q1',
+      title: 'Game One',
+      description: 'video game',
+      developer: 'Mio Studio',
+      releaseYear: 2005,
+    }])
   })
 
   it('throws when Wikidata search fails', async () => {

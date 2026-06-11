@@ -214,6 +214,18 @@ function searchCurrentTitle() {
   queueWikidataSearch(form.value.title.trim())
 }
 
+function wikidataSuggestionDetails(suggestion: WikidataGameSuggestion) {
+  const description = suggestion.releaseYear
+    ? suggestion.description.replace(new RegExp(`^${suggestion.releaseYear}\\s+`, 'i'), '')
+    : suggestion.description
+
+  return [
+    suggestion.releaseYear,
+    suggestion.developer,
+    description,
+  ].filter(Boolean).join(' · ')
+}
+
 async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
   if (!form.value.id) {
     form.value.title = suggestion.title
@@ -324,7 +336,7 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
             @click="useWikidataSuggestion(suggestion)"
           >
             <span>{{ suggestion.title }}</span>
-            <small>{{ suggestion.description }}</small>
+            <small>{{ wikidataSuggestionDetails(suggestion) }}</small>
           </button>
         </div>
       </div>

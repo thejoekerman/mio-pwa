@@ -9,6 +9,8 @@ export interface WikidataGameSuggestion {
   id: string
   title: string
   description: string
+  developer: string | null
+  releaseYear: number | null
 }
 
 export interface WikidataGameMetadata {
@@ -47,9 +49,11 @@ export async function searchWikidataGames(
   }
 
   const payload = await response.json() as { search?: unknown[] }
-  return Array.isArray(payload.search)
+  const suggestions = Array.isArray(payload.search)
     ? payload.search.flatMap(wikidataSuggestionFromEntity).slice(0, 4)
     : []
+
+  return enrichWikidataSuggestions(suggestions, signal)
 }
 
 export async function getWikidataGameMetadata(itemId: string): Promise<WikidataGameMetadata> {
@@ -127,7 +131,7 @@ function wikidataSuggestionFromEntity(entity: unknown): WikidataGameSuggestion[]
     return []
   }
 
-  return [{ id, title, description }]
+  return [{ id, title, description, developer: null, releaseYear: null }]
 }
 
 function isLikelyVideoGameDescription(description: string) {
@@ -135,4 +139,88 @@ function isLikelyVideoGameDescription(description: string) {
     /video game|computer game/i.test(description) &&
     !/soundtrack|podcast|film|theme/i.test(description)
   )
+}
+
+async function enrichWikidataSuggestions(
+  suggestions: WikidataGameSuggestion[],
+  signal?: AbortSignal,
+) {
+  if (suggestions.length === 0) {
+    return suggestions
+  }
+
+  try {
+    const claimsParams = new URLSearchParams({
+      action: 'wbgetentities',
+      format: 'json',
+      origin: '*',
+      props: 'claims',
+      ids: suggestions.map(({ id }) => id).join('|'),
+    })
+    const claimsResponse = await fetch(`https://www.wikidata.org/w/api.php?${claimsParams.toString()}`, {
+      signal,
+    })
+
+    if (!claimsResponse.ok) {
+      return suggestions
+    }
+
+    const claimsPayload = await claimsResponse.json() as { entities?: Record<string, unknown> }
+    const detailsById = new Map(
+      suggestions.map(({ id }) => {
+        const entity = claimsPayload.entities?.[id]
+        const claims = entity && typeof entity === 'object' && 'claims' in entity
+          ? { claims: (entity as { claims: unknown }).claims }
+          : null
+
+        return [id, {
+          developerId: wikidataEntityIdsFromClaims(claims, 'P178')[0] ?? null,
+          releaseYear: wikidataReleaseYearFromClaims(claims),
+        }] as const
+      }),
+    )
+    const developerIds = [
+      ...new Set(
+        [...detailsById.values()]
+          .map(({ developerId }) => developerId)
+          .filter((id): id is string => id !== null),
+      ),
+    ]
+    let developerLabels: Record<string, string> = {}
+
+    if (developerIds.length > 0) {
+      const labelParams = new URLSearchParams({
+        action: 'wbgetentities',
+        format: 'json',
+        languages: 'en',
+        languagefallback: '1',
+        origin: '*',
+        props: 'labels',
+        ids: developerIds.join('|'),
+      })
+      const labelResponse = await fetch(`https://www.wikidata.org/w/api.php?${labelParams.toString()}`, {
+        signal,
+      })
+
+      if (labelResponse.ok) {
+        developerLabels = wikidataEntityLabelMap(await labelResponse.json())
+      }
+    }
+
+    return suggestions.map((suggestion) => {
+      const details = detailsById.get(suggestion.id)
+
+      return {
+        ...suggestion,
+        developer: details?.developerId ? (developerLabels[details.developerId] ?? null) : null,
+        releaseYear: details?.releaseYear ?? null,
+      }
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return suggestions
+  }
 }
