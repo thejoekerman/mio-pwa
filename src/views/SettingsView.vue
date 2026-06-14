@@ -7,6 +7,11 @@ import { useI18n } from '../i18n'
 import { APP_LANGUAGES, APP_THEMES, type BackupData, type BackupImportMode } from '../types'
 import { isDemoMode } from '../lib/appMode'
 import { downloadBackupPayload, downloadTextFile } from '../lib/backupDownload'
+import {
+  DEFAULT_PLAY_LOG_SHARE_HASHTAGS,
+  DEFAULT_PLAY_LOG_SHARE_TEMPLATE,
+  renderPlayLogShareText,
+} from '../lib/playLogShare'
 import type { LibraryCsvImportPlan } from '../lib/libraryCsv'
 import {
   detectWebGpuSupport,
@@ -35,7 +40,7 @@ const {
   syncNow,
   testSyncConnection,
 } = useBacklog()
-const { settings, setAiLocalReviewModel, setLanguage, setTheme } = useSettings()
+const { settings, setAiLocalReviewModel, setLanguage, setPlayLogShareSettings, setTheme } = useSettings()
 const { t } = useI18n()
 const webGpuAvailable = ref(isWebGpuAvailable())
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -53,6 +58,18 @@ const csvImportPlan = ref<LibraryCsvImportPlan | null>(null)
 const CSV_PREVIEW_MESSAGE_LIMIT = 6
 const syncNotice = ref('')
 const syncNoticeTone = ref<'success' | 'error'>('success')
+const shareSettingsDialogOpen = ref(false)
+const shareTemplateDraft = ref('')
+const shareHashtagsDraft = ref('')
+const shareTemplatePreview = computed(() =>
+  renderPlayLogShareText(shareTemplateDraft.value, {
+    title: t('settings.shareExampleTitle'),
+    log: t('settings.shareExampleLog'),
+    platform: t('settings.shareExamplePlatform'),
+    status: t('status.playing'),
+    hashtags: shareHashtagsDraft.value,
+  }),
+)
 const languageOptions = computed(() =>
   APP_LANGUAGES.map((language) => ({
     title: t(`settings.language.${language}`),
@@ -307,6 +324,22 @@ function updateImportMode(value: string | null) {
   }
 }
 
+function openShareSettings() {
+  shareTemplateDraft.value = settings.playLogShareTemplate
+  shareHashtagsDraft.value = settings.playLogShareHashtags
+  shareSettingsDialogOpen.value = true
+}
+
+function resetShareSettingsDraft() {
+  shareTemplateDraft.value = DEFAULT_PLAY_LOG_SHARE_TEMPLATE
+  shareHashtagsDraft.value = DEFAULT_PLAY_LOG_SHARE_HASHTAGS
+}
+
+function saveShareSettings() {
+  setPlayLogShareSettings(shareTemplateDraft.value, shareHashtagsDraft.value)
+  shareSettingsDialogOpen.value = false
+}
+
 async function handleExport() {
   const payload = await exportBackup()
 
@@ -546,6 +579,19 @@ async function handleSyncNow() {
           :model-value="settings.theme"
           @update:model-value="updateTheme"
         />
+      </div>
+    </section>
+
+    <section class="panel settings-section settings-compact-section">
+      <div class="settings-compact-copy">
+        <div>
+          <p class="section-kicker">{{ t('settings.shareKicker') }}</p>
+          <h2>{{ t('settings.shareTitle') }}</h2>
+          <p class="section-helper">{{ t('settings.shareHelper') }}</p>
+        </div>
+        <VBtn type="button" variant="outlined" color="primary" @click="openShareSettings">
+          {{ t('settings.shareConfigure') }}
+        </VBtn>
       </div>
     </section>
 
@@ -890,6 +936,48 @@ async function handleSyncNow() {
           </VBtn>
           <VBtn class="miolog-primary-action" type="button" color="primary" @click="confirmLocalModelDownload">
             {{ t('settings.localAiConfirmDownload') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="shareSettingsDialogOpen" class="confirm-dialog" max-width="620">
+      <VCard>
+        <VCardTitle>{{ t('settings.shareDialogTitle') }}</VCardTitle>
+        <VCardText class="share-settings-dialog">
+          <VTextarea
+            v-model="shareTemplateDraft"
+            class="settings-control"
+            rows="7"
+            auto-grow
+            :label="t('settings.shareTemplateLabel')"
+            :hint="t('settings.shareTemplateHint')"
+            persistent-hint
+          />
+          <VTextField
+            v-model="shareHashtagsDraft"
+            class="settings-control"
+            :label="t('settings.shareHashtagsLabel')"
+            :hint="t('settings.shareHashtagsHint')"
+            persistent-hint
+          />
+          <div class="share-preview">
+            <div class="share-preview-heading">
+              <strong>{{ t('settings.sharePreview') }}</strong>
+              <span>{{ t('settings.shareCharacterCount', { count: shareTemplatePreview.length }) }}</span>
+            </div>
+            <p>{{ shareTemplatePreview }}</p>
+          </div>
+        </VCardText>
+        <VCardActions>
+          <VBtn type="button" variant="text" color="primary" @click="resetShareSettingsDraft">
+            {{ t('settings.shareReset') }}
+          </VBtn>
+          <VBtn type="button" variant="outlined" color="primary" @click="shareSettingsDialogOpen = false">
+            {{ t('settings.shareCancel') }}
+          </VBtn>
+          <VBtn class="miolog-primary-action" type="button" color="primary" @click="saveShareSettings">
+            {{ t('settings.shareSave') }}
           </VBtn>
         </VCardActions>
       </VCard>

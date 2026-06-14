@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameCover from './GameCover.vue'
 import { useI18n } from '../i18n'
+import { useSettings } from '../composables/useSettings'
 import {
   createGameJournalFileName,
   createGameJournalMarkdown,
@@ -10,9 +11,11 @@ import {
 } from '../lib/journalExport'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
 import { getLifetimePlayTime, groupJourneyLogs } from '../lib/gameJourneyHistory'
+import { createPlayLogShareText } from '../lib/playLogShare'
 import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type Journey, type JourneyLogEntry, type LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
+const { settings } = useSettings()
 const router = useRouter()
 
 const props = defineProps<{
@@ -43,6 +46,9 @@ const emit = defineEmits<{
   journalCopied: []
   journalCopyFailed: []
   journalExported: []
+  playLogShared: []
+  playLogCopied: []
+  playLogShareFailed: []
   saveLog: []
   saveLogEdit: [logId: string, content: string]
   selectJourney: [journeyId: string]
@@ -68,6 +74,7 @@ async function handleAddTime() {
 }
 
 const editingLogId = ref<string | null>(null)
+const sharingLog = ref<{ log: Pick<LogEntry, 'content'>; journey: Journey } | null>(null)
 const editingLogContent = ref('')
 const trimmedEditingLogContent = computed(() => editingLogContent.value.trim())
 const editingLog = computed(() => props.logs.find((log) => log.id === editingLogId.value) ?? null)
@@ -79,6 +86,22 @@ const canSaveEditingLog = computed(
 const canShareJournal = computed(() =>
   Boolean(props.selectedGame && (props.logs.length > 0 || props.selectedGame.review.trim())),
 )
+const canNativeShare = computed(() => typeof navigator.share === 'function')
+const playLogShareText = computed(() => {
+  const target = sharingLog.value
+
+  if (!target || !props.selectedGame) {
+    return ''
+  }
+
+  return createPlayLogShareText({
+    game: { ...props.selectedGame, platform: target.journey.platform, status: target.journey.status },
+    hashtags: settings.playLogShareHashtags,
+    log: target.log,
+    status: statusLabel(target.journey.status),
+    template: settings.playLogShareTemplate,
+  })
+})
 const lifetimePlayTime = computed(() => getLifetimePlayTime(props.journeys))
 const journeyLogGroups = computed(() =>
   groupJourneyLogs(props.journeys, props.journeyLogs)
@@ -187,6 +210,43 @@ function saveEditingLog() {
 
   emit('saveLogEdit', editingLogId.value, trimmedEditingLogContent.value)
   cancelEditingLog()
+}
+
+function openLogShare(log: Pick<LogEntry, 'content'>, journey: Journey | null) {
+  if (journey) {
+    sharingLog.value = { log, journey }
+  }
+}
+
+async function sharePlayLog() {
+  if (!canNativeShare.value || !playLogShareText.value) {
+    return
+  }
+
+  try {
+    await navigator.share({ text: playLogShareText.value })
+    sharingLog.value = null
+    emit('playLogShared')
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      emit('playLogShareFailed')
+    }
+  }
+}
+
+async function copyPlayLogShareText() {
+  if (!navigator.clipboard || !playLogShareText.value) {
+    emit('playLogShareFailed')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(playLogShareText.value)
+    sharingLog.value = null
+    emit('playLogCopied')
+  } catch {
+    emit('playLogShareFailed')
+  }
 }
 
 async function copyReview() {
@@ -583,11 +643,27 @@ function creditLine(game: Game) {
               <span class="detail-log-count">{{ group.logs.length }}</span>
             </button>
             <article v-for="log in group.logs" :key="log.id" class="log-entry compact">
-              <div class="log-entry-meta">
-                <time>{{ formatDate(log.createdAt) }}</time>
-                <span v-if="wasEdited(log)" class="log-entry-edited">
-                  {{ t('detail.editedLog', { date: formatDate(log.updatedAt) }) }}
-                </span>
+              <div class="log-entry-header">
+                <div class="log-entry-meta">
+                  <time>{{ formatDate(log.createdAt) }}</time>
+                  <span v-if="wasEdited(log)" class="log-entry-edited">
+                    {{ t('detail.editedLog', { date: formatDate(log.updatedAt) }) }}
+                  </span>
+                </div>
+                <button
+                  class="icon-button log-edit-button"
+                  type="button"
+                  :aria-label="t('detail.shareLog')"
+                  :title="t('detail.shareLog')"
+                  @click="openLogShare(log, group.journey)"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                  </svg>
+                </button>
               </div>
               <p>{{ log.content }}</p>
             </article>
@@ -603,19 +679,34 @@ function creditLine(game: Game) {
                   {{ t('detail.editedLog', { date: formatDate(log.updatedAt) }) }}
                 </span>
               </div>
-              <button
-                v-if="editingLogId !== log.id"
-                class="icon-button log-edit-button"
-                type="button"
-                :aria-label="t('detail.editLog')"
-                :title="t('detail.editLog')"
-                @click="startEditingLog(log)"
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                </svg>
-              </button>
+              <div v-if="editingLogId !== log.id" class="log-entry-buttons">
+                <button
+                  class="icon-button log-edit-button"
+                  type="button"
+                  :aria-label="t('detail.shareLog')"
+                  :title="t('detail.shareLog')"
+                  @click="openLogShare(log, selectedJourney)"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                  </svg>
+                </button>
+                <button
+                  class="icon-button log-edit-button"
+                  type="button"
+                  :aria-label="t('detail.editLog')"
+                  :title="t('detail.editLog')"
+                  @click="startEditingLog(log)"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <form v-if="editingLogId === log.id" class="log-edit-form" @submit.prevent="saveEditingLog">
@@ -663,5 +754,39 @@ function creditLine(game: Game) {
       <h3>{{ t('detail.selectGame') }}</h3>
       <p>{{ t('detail.selectGameBody') }}</p>
     </div>
+
+    <VDialog :model-value="Boolean(sharingLog)" class="confirm-dialog" max-width="560" @update:model-value="sharingLog = null">
+      <VCard>
+        <VCardTitle>{{ t('detail.shareLogTitle') }}</VCardTitle>
+        <VCardText>
+          <div class="share-preview">
+            <div class="share-preview-heading share-preview-heading--count">
+              <span>{{ t('detail.shareLogCharacterCount', { count: playLogShareText.length }) }}</span>
+            </div>
+            <p>{{ playLogShareText }}</p>
+          </div>
+          <p v-if="!canNativeShare" class="share-native-unavailable">
+            {{ t('detail.shareLogUnavailable') }}
+          </p>
+        </VCardText>
+        <VCardActions>
+          <VBtn type="button" variant="text" color="primary" @click="sharingLog = null">
+            {{ t('detail.shareLogCancel') }}
+          </VBtn>
+          <VBtn type="button" variant="outlined" color="primary" @click="copyPlayLogShareText">
+            {{ t('detail.shareLogCopy') }}
+          </VBtn>
+          <VBtn
+            class="miolog-primary-action"
+            type="button"
+            color="primary"
+            :disabled="!canNativeShare"
+            @click="sharePlayLog"
+          >
+            {{ t('detail.shareLogNative') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </section>
 </template>

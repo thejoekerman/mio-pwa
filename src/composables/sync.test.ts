@@ -92,6 +92,8 @@ function makeSettings(overrides: Partial<AppSettingsState> = {}): AppSettingsSta
     syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
+    playLogShareTemplate: '{title}\n\n{log}\n\n{hashtags}',
+    playLogShareHashtags: '#games',
     ...overrides,
   })
 }

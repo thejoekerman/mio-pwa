@@ -33,6 +33,8 @@ function makeSettings(language: 'en' | 'de' = 'en'): AppSettingsState {
     syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
+    playLogShareTemplate: '{title}\n\n{log}\n\n{hashtags}',
+    playLogShareHashtags: '#games',
   })
 }
 

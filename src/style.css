@@ -726,6 +726,21 @@ pwa-install {
   gap: 18px;
 }
 
+.settings-compact-section {
+  padding-block: 18px;
+}
+
+.settings-compact-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+}
+
+.settings-compact-copy h2 {
+  margin: 0.15rem 0 0.35rem;
+}
+
 .settings-grid {
   display: grid;
   gap: 18px;
@@ -915,6 +930,54 @@ pwa-install {
 .confirm-dialog .v-btn {
   letter-spacing: 0;
   text-transform: none;
+}
+
+.share-settings-dialog {
+  display: grid;
+  gap: 18px;
+}
+
+.share-preview {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.share-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.share-preview-heading--count {
+  justify-content: end;
+}
+
+.share-preview p {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.share-native-unavailable {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+@media (max-width: 640px) {
+  .settings-compact-copy {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-compact-copy .v-btn {
+    width: 100%;
+  }
 }
 
 .shell {
@@ -3462,6 +3525,12 @@ textarea:focus {
   gap: 12px;
   align-items: flex-start;
   margin-bottom: 10px;
+}
+
+.log-entry-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .log-entry-meta {

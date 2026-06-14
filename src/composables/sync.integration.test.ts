@@ -99,6 +99,8 @@ function makeSettings(): AppSettingsState {
     syncApiVersion: 2,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
+    playLogShareTemplate: '{title}\n\n{log}\n\n{hashtags}',
+    playLogShareHashtags: '#games',
   })
 }
 

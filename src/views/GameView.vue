@@ -88,6 +88,18 @@ function handleJournalCopyFailed() {
 function handleJournalExported() {
   setFeedback(t('feedback.journalExported'))
 }
+
+function handlePlayLogShared() {
+  setFeedback(t('feedback.playLogShared'))
+}
+
+function handlePlayLogCopied() {
+  setFeedback(t('feedback.playLogCopied'))
+}
+
+function handlePlayLogShareFailed() {
+  setFeedback(t('feedback.playLogShareFailed'), 'error')
+}
 </script>
 
 <template>
@@ -119,6 +131,9 @@ function handleJournalExported() {
       @journal-copied="handleJournalCopied"
       @journal-copy-failed="handleJournalCopyFailed"
       @journal-exported="handleJournalExported"
+      @play-log-shared="handlePlayLogShared"
+      @play-log-copied="handlePlayLogCopied"
+      @play-log-share-failed="handlePlayLogShareFailed"
       @save-log="saveCurrentLog"
       @save-log-edit="updateLogEntry"
       @select-journey="selectJourney"

@@ -9,6 +9,10 @@ import {
 } from '../types'
 import { isDemoMode } from '../lib/appMode'
 import { DEFAULT_LOCAL_REVIEW_MODEL, isLocalReviewModelId } from '../lib/localReviewModels'
+import {
+  DEFAULT_PLAY_LOG_SHARE_HASHTAGS,
+  DEFAULT_PLAY_LOG_SHARE_TEMPLATE,
+} from '../lib/playLogShare'
 
 const SETTINGS_STORAGE_KEY = isDemoMode ? 'miolog-demo-settings' : 'miolog-settings'
 
@@ -28,6 +32,8 @@ export interface AppSettingsState {
   syncApiVersion: number
   aiLocalReviewDraftEnabled: boolean
   aiLocalReviewModel: string
+  playLogShareTemplate: string
+  playLogShareHashtags: string
 }
 
 function detectBrowserLanguage(): AppLanguage {
@@ -136,6 +142,14 @@ function readStoredSettings(): Partial<AppSettingsState> {
       nextState.aiLocalReviewModel = parsed.aiLocalReviewModel
     }
 
+    if (typeof parsed.playLogShareTemplate === 'string' && parsed.playLogShareTemplate.trim()) {
+      nextState.playLogShareTemplate = parsed.playLogShareTemplate
+    }
+
+    if (typeof parsed.playLogShareHashtags === 'string') {
+      nextState.playLogShareHashtags = parsed.playLogShareHashtags
+    }
+
     return nextState
   } catch {
     return {}
@@ -160,6 +174,8 @@ function createSettingsStore() {
     syncApiVersion: stored.syncApiVersion ?? 1,
     aiLocalReviewDraftEnabled: stored.aiLocalReviewDraftEnabled ?? false,
     aiLocalReviewModel: stored.aiLocalReviewModel ?? DEFAULT_LOCAL_REVIEW_MODEL,
+    playLogShareTemplate: stored.playLogShareTemplate ?? DEFAULT_PLAY_LOG_SHARE_TEMPLATE,
+    playLogShareHashtags: stored.playLogShareHashtags ?? DEFAULT_PLAY_LOG_SHARE_HASHTAGS,
   })
 
   watch(
@@ -251,10 +267,16 @@ function createSettingsStore() {
     }
   }
 
+  function setPlayLogShareSettings(template: string, hashtags: string) {
+    settings.playLogShareTemplate = template.trim() || DEFAULT_PLAY_LOG_SHARE_TEMPLATE
+    settings.playLogShareHashtags = hashtags.trim()
+  }
+
   return {
     setAiLocalReviewDraftEnabled,
     setAiLocalReviewModel,
     setAiReviewDraftAvailable,
+    setPlayLogShareSettings,
     setSyncApiVersion,
     setAutoSyncEnabled,
     setBackupReminderDismissedAt,
