@@ -174,17 +174,6 @@ export interface Game {
   externalReferences?: ExternalReference[]
   metadataReviewedAt?: string | null
   coverSource?: GameArtwork['source'] | null
-  igdbId: number | null
-  igdbUrl?: string | null
-  igdbTtbHastilySeconds?: number | null
-  igdbTtbNormallySeconds?: number | null
-  igdbTtbCompletelySeconds?: number | null
-  igdbTtbCount?: number | null
-  igdbTtbUpdatedAt?: string | null
-  igdbDevelopers?: string[] | null
-  igdbPublishers?: string[] | null
-  igdbThemes?: string[] | null
-  igdbGameModes?: string[] | null
   releaseYear?: number | null
   priority?: GamePriority | null
   developer?: string | null
@@ -285,7 +274,6 @@ export interface GameFormState {
   platform: string
   ownershipType: '' | GameOwnershipType
   tags: string
-  igdbId: string
   wikidataId: string
   wikipediaTitle: string
   coverSourceUrl: string

@@ -15,7 +15,6 @@ import {
   type BacklogRecommendation,
   type RecommendationReason,
 } from '../lib/backlogRecommendation'
-import { getTimeToBeatHours } from '../lib/timeToBeat'
 import type { Game, GameStatus } from '../types'
 
 const {
@@ -146,12 +145,6 @@ const featuredGameMetadata = computed(() => {
     metadata.push(`${game.playTimeHours} h`)
   }
 
-  const timeToBeat = formatTimeToBeat(game)
-
-  if (timeToBeat) {
-    metadata.push(timeToBeat)
-  }
-
   return metadata
 })
 
@@ -269,12 +262,6 @@ async function openPlayingCard(game: Game, event: PointerEvent | MouseEvent) {
   await router.push({ name: 'game', params: { gameId: game.id } })
 }
 
-function formatTimeToBeat(game: Game) {
-  const hours = getTimeToBeatHours(game)
-
-  return hours === null ? null : `~${hours} h`
-}
-
 function goToHomeGame(index: number) {
   emblaApi.value?.scrollTo(index)
 }
@@ -293,7 +280,7 @@ function refreshBacklogRecommendations() {
 }
 
 function formatRecommendationMeta(game: Game) {
-  return [game.platform || t('home.platformFree'), formatTimeToBeat(game)].filter(Boolean).join(' · ')
+  return game.platform || t('home.platformFree')
 }
 
 function formatRecommendationBody(recommendation: BacklogRecommendation) {
@@ -309,14 +296,6 @@ function formatRecommendationReason(reason: RecommendationReason) {
 
   if (reason.kind === 'taste') {
     return t('home.recommendationReasonTaste', { tag: reason.tag })
-  }
-
-  if (reason.kind === 'timeToBeat') {
-    return t('home.recommendationReasonTimeToBeat', { hours: reason.hours })
-  }
-
-  if (reason.kind === 'bigAdventure') {
-    return t('home.recommendationReasonBigAdventure', { hours: reason.hours })
   }
 
   if (reason.kind === 'longWaiting') {

@@ -39,7 +39,6 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
     finishedAt: null,
     pausedAt: null,
     nudgeAt: null,
@@ -449,6 +448,39 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
   })
 
   describe('importBackupData', () => {
+    it('keeps only the selected cover from legacy enrichment data', async () => {
+      await importBackupData(
+        {
+          version: 1,
+          exportedAt: '2026-05-28T00:00:00Z',
+          games: [{
+            ...makeGame({ id: 'legacy-enriched', coverUrl: 'https://example.test/selected-cover.jpg' }),
+            igdbId: 123,
+            igdbUrl: 'https://igdb.example/game',
+            igdbDevelopers: ['Enriched Developer'],
+            igdbPublishers: ['Enriched Publisher'],
+            igdbTtbNormallySeconds: 36000,
+          }],
+          logs: [],
+          earnedTrophies: [],
+        },
+        'replace',
+      )
+
+      expect(await getAllCanonicalGames()).toEqual([
+        expect.objectContaining({
+          id: 'legacy-enriched',
+          cover: {
+            url: 'https://example.test/selected-cover.jpg',
+            source: { provider: 'manual', pageUrl: null },
+          },
+          developers: [],
+          publishers: [],
+          playtimeEstimates: null,
+        }),
+      ])
+    })
+
     it('replace mode wipes existing rows before writing the backup', async () => {
       await saveGame(makeGame({ id: 'existing', title: 'Existing' }))
       await saveLogEntry(makeLog({ id: 'el', gameId: 'existing' }))
@@ -628,7 +660,7 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
     })
 
     it('does NOT preserve other fields — coverUrl from the server response wins (or null wipes)', async () => {
-      // The carve-out is intentionally narrow: cover/igdb metadata follow the
+      // The carve-out is intentionally narrow: cover metadata follows the
       // server. Locking this in so a well-meaning future widening doesn't silently
       // grow into "preserve everything" (which would break sync correctness).
       await saveGame(makeGame({ id: 'g1', coverUrl: 'https://local.test/cover.jpg' }))

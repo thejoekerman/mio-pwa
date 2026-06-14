@@ -1,11 +1,12 @@
 import Dexie from 'dexie'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Game, LogEntry } from '../types'
+import type { LogEntry } from '../types'
 import { BacklogDatabase } from './backlogDb'
+import type { LegacyGame } from './gameJourneyMigration'
 
 const databaseNames: string[] = []
 
-function makeLegacyGame(overrides: Partial<Game> = {}): Game {
+function makeLegacyGame(overrides: Partial<LegacyGame> = {}): LegacyGame {
   return {
     id: 'legacy-game',
     title: 'Legacy Game',
@@ -73,7 +74,7 @@ describe('IndexedDB v7 Game + Journey migration', () => {
         id: 'legacy-game',
         title: 'Legacy Game',
         developers: ['Manual Developer'],
-        publishers: ['Fallback Publisher'],
+        publishers: [],
         cover: {
           url: 'https://example.test/cover.webp',
           source: { provider: 'manual', pageUrl: null },

@@ -13,7 +13,7 @@ export interface WrappedCardStats {
 }
 
 // Fetch image via fetch() → objectURL so canvas never gets tainted,
-// regardless of whether the IGDB CDN sends CORS headers.
+// regardless of whether the image host sends CORS headers.
 async function fetchImage(url: string): Promise<HTMLImageElement | null> {
   try {
     const response = await fetch(url)

@@ -13,7 +13,7 @@ import type { AppSettingsState } from './useSettings'
 // Integration test: runs the sync composable against REAL Dexie (via fake-indexeddb
 // — see vitest.setup.ts). Only the network boundary is mocked; the IndexedDB
 // snapshot+rebuild path is exercised end-to-end. The point is to catch bugs
-// the unit-level sync.test.ts can't see — e.g. the IGDB-enrichment regression
+// the unit-level sync.test.ts can't see — e.g. the server-side cover regression
 // where the in-memory store update was correct but the IndexedDB rebuild was
 // silently skipped.
 
@@ -54,7 +54,6 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
     finishedAt: null,
     pausedAt: null,
     nudgeAt: null,
@@ -105,7 +104,6 @@ function makeDeps() {
     finishedAt: '',
     pausedAt: '',
     nudgeAt: '',
-    igdbId: '',
     wikidataId: '',
     wikipediaTitle: '',
     coverSourceUrl: '',
@@ -156,17 +154,11 @@ describe('sync integration (real Dexie via fake-indexeddb)', () => {
   })
 
   it('writes the enriched cover into IndexedDB when the server response bumps updatedAt', async () => {
-    // This is the canonical regression test for the IGDB-enrich bug
-    // (mio-server: IgdbMetadataEnricher used to write fields without bumping
-    // Game.updatedAt; the PWA's snapshot diff then skipped the rebuild and the
-    // cover never reached IndexedDB). After the server-side fix, the post-enrich
-    // server response carries a new updatedAt — and the client must persist the
-    // enriched cover into Dexie.
+    // A server response with a newer updatedAt must persist its changed cover.
     await saveGame(
       makeGame({
         id: 'celeste',
         title: 'Celeste',
-        igdbId: 1454,
         coverUrl: null,
         updatedAt: '2026-05-01T10:00:00.000Z',
       }),
@@ -177,7 +169,6 @@ describe('sync integration (real Dexie via fake-indexeddb)', () => {
         makeGame({
           id: 'celeste',
           title: 'Celeste',
-          igdbId: 1454,
           coverUrl: 'https://images.igdb.test/celeste.jpg',
           updatedAt: '2026-05-28T11:59:00.000Z',
         }),

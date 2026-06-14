@@ -18,7 +18,6 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
     finishedAt: null,
     pausedAt: null,
     nudgeAt: null,
@@ -156,7 +155,6 @@ describe('useBacklog', () => {
       store.gameForm.title = 'WIP'
       store.gameForm.status = 'finished'
       store.gameForm.tags = 'rpg, jrpg'
-      store.gameForm.igdbId = '42'
 
       store.resetForm()
 
@@ -164,7 +162,6 @@ describe('useBacklog', () => {
       expect(store.gameForm.title).toBe('')
       expect(store.gameForm.status).toBe('backlog')
       expect(store.gameForm.tags).toBe('')
-      expect(store.gameForm.igdbId).toBe('')
     })
 
     it('startEditingGame selects the game and populates the form', async () => {
@@ -175,7 +172,6 @@ describe('useBacklog', () => {
         rating: 9,
         playTimeHours: 27.5,
         tags: ['Metroidvania', 'Indie'],
-        igdbId: 1234,
         developer: 'Team Cherry',
         finishedAt: '2026-04-01',
       })
@@ -190,7 +186,6 @@ describe('useBacklog', () => {
       expect(store.gameForm.rating).toBe('9')
       expect(store.gameForm.playTimeHours).toBe('27.5')
       expect(store.gameForm.tags).toBe('Metroidvania, Indie')
-      expect(store.gameForm.igdbId).toBe('1234')
       expect(store.gameForm.developer).toBe('Team Cherry')
       expect(store.gameForm.finishedAt).toBe('2026-04-01')
     })

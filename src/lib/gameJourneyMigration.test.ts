@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { Game, LogEntry } from '../types'
+import type { LogEntry } from '../types'
 import {
   initialJourneyIdForGame,
   migrateLegacyGame,
   migrateLegacyLibrary,
+  type LegacyGame,
 } from './gameJourneyMigration'
 
-function makeLegacyGame(overrides: Partial<Game> = {}): Game {
+function makeLegacyGame(overrides: Partial<LegacyGame> = {}): LegacyGame {
   return {
     id: 'persona-5-royal',
     title: 'Persona 5 Royal',
@@ -115,7 +116,7 @@ describe('legacy Game + Journey migration', () => {
     expect(game).not.toHaveProperty('status')
   })
 
-  it('uses visible IGDB credit arrays only when manual credits are missing', () => {
+  it('discards legacy IGDB credits when manual credits are missing', () => {
     const game = migrateLegacyGame(makeLegacyGame({
       developer: null,
       publisher: ' ',
@@ -123,8 +124,8 @@ describe('legacy Game + Journey migration', () => {
       igdbPublishers: ['Fallback Publisher'],
     }))
 
-    expect(game.developers).toEqual(['Fallback Developer'])
-    expect(game.publishers).toEqual(['Fallback Publisher'])
+    expect(game.developers).toEqual([])
+    expect(game.publishers).toEqual([])
   })
 
   it('preserves paused dates and tombstones on the initial Journey', () => {

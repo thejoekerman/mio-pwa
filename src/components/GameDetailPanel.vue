@@ -10,7 +10,6 @@ import {
 } from '../lib/journalExport'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
 import { getLifetimePlayTime, groupJourneyLogs } from '../lib/gameJourneyHistory'
-import { getTimeToBeatHours } from '../lib/timeToBeat'
 import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type Journey, type JourneyLogEntry, type LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
@@ -129,8 +128,7 @@ const detailMetadata = computed(() => {
     game.playTimeHours !== null ? `${game.playTimeHours} h` : null,
     lifetimePlayTime.value !== null ? t('detail.lifetimePlayTime', { hours: lifetimePlayTime.value }) : null,
     game.releaseYear ? String(game.releaseYear) : null,
-    formatTimeToBeat(game) ? `${formatTimeToBeat(game)} TTB` : null,
-    igdbCreditLine(game),
+    creditLine(game),
     ...game.tags,
   ].filter((item): item is string => Boolean(item))
 })
@@ -234,12 +232,6 @@ function wasEdited(log: Pick<LogEntry, 'createdAt' | 'updatedAt'>) {
   return new Date(log.updatedAt).getTime() > new Date(log.createdAt).getTime()
 }
 
-function formatTimeToBeat(game: Game) {
-  const hours = getTimeToBeatHours(game)
-
-  return hours === null ? null : `~${hours} h`
-}
-
 async function handleStatusChange(status: GameStatus) {
   await props.changeGameStatus(status)
 }
@@ -267,20 +259,20 @@ function selectHistoryJourney(journeyId: string) {
   emit('selectJourney', journeyId)
 }
 
-function igdbCreditLine(game: Game) {
+function creditLine(game: Game) {
   const developers = getDisplayDeveloper(game)
   const publishers = getDisplayPublisher(game)
 
   if (developers && publishers) {
-    return t('detail.igdbCreditsFull', { developers, publishers })
+    return t('detail.creditsFull', { developers, publishers })
   }
 
   if (developers) {
-    return t('detail.igdbCreditsDevelopers', { developers })
+    return t('detail.creditsDevelopers', { developers })
   }
 
   if (publishers) {
-    return t('detail.igdbCreditsPublishers', { publishers })
+    return t('detail.creditsPublishers', { publishers })
   }
 
   return null
@@ -449,15 +441,6 @@ function igdbCreditLine(game: Game) {
               </template>
             </div>
           </div>
-          <a
-            v-if="selectedGame.igdbUrl"
-            class="detail-meta-link"
-            :href="selectedGame.igdbUrl"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {{ t('detail.openIgdb') }}
-          </a>
         </div>
       </div>
 

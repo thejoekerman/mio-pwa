@@ -55,18 +55,7 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
-    igdbUrl: null,
     coverUrl: null,
-    igdbTtbHastilySeconds: null,
-    igdbTtbNormallySeconds: null,
-    igdbTtbCompletelySeconds: null,
-    igdbTtbCount: null,
-    igdbTtbUpdatedAt: null,
-    igdbDevelopers: null,
-    igdbPublishers: null,
-    igdbThemes: null,
-    igdbGameModes: null,
     releaseYear: null,
     developer: null,
     publisher: null,
@@ -126,7 +115,6 @@ function makeDeps(overrides: Partial<Record<string, unknown>> = {}) {
     finishedAt: '',
     pausedAt: '',
     nudgeAt: '',
-    igdbId: '',
     wikidataId: '',
     wikipediaTitle: '',
     coverSourceUrl: '',
@@ -205,7 +193,7 @@ describe('createSyncHandlers > syncNow', () => {
 
   describe('snapshot diff', () => {
     it('rebuilds the local store when the server returns a different updatedAt for a game', async () => {
-      // Regression for the IGDB-enrich bug: post-enrich the server bumps updatedAt,
+      // Regression for server-side cover updates: the server bumps updatedAt,
       // so the snapshot signatures differ and the rebuild MUST run — otherwise the
       // enriched cover never reaches IndexedDB. If snapshotsMatch ever expands its
       // signature in a way that misses this, this test should fail.

@@ -14,7 +14,6 @@ function createForm(overrides: Partial<GameFormState> = {}): GameFormState {
     platform: '',
     ownershipType: '',
     tags: '',
-    igdbId: '',
     wikidataId: '',
     wikipediaTitle: '',
     coverSourceUrl: '',
@@ -164,11 +163,10 @@ describe('GameFormPanel', () => {
     expect(mountForm(reactive(createForm({ id: null }))).find('[data-field="Review"]').exists()).toBe(false)
   })
 
-  it('offers local metadata lookup while editing without exposing the legacy IGDB field', () => {
+  it('offers local metadata lookup while editing', () => {
     const wrapper = mountForm()
 
     expect(wrapper.text()).toContain('Find metadata')
-    expect(wrapper.find('[data-field="IGDB ID"]').exists()).toBe(false)
   })
 
   it('links an explicitly selected Wikidata identity without renaming an existing Game', async () => {

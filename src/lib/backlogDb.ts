@@ -23,10 +23,11 @@ import {
   migrateLegacyGame,
   migrateLegacyJourney,
   migrateLegacyLibrary,
+  type LegacyGame,
 } from './gameJourneyMigration'
 import { getCurrentJourney } from './gameJourneyState'
 
-type StoredGame = Omit<Game, 'ownershipType'> & {
+type StoredGame = Omit<LegacyGame, 'ownershipType'> & {
   notes?: string
   ownershipType?: unknown
 }
@@ -174,20 +175,6 @@ function normalizeStoredGame(game: StoredGame): Game {
         : null,
     review: game.review ?? game.notes ?? '',
     ownershipType: asNullableOwnershipType(game.ownershipType),
-    igdbId:
-      typeof game.igdbId === 'number' && Number.isInteger(game.igdbId) && game.igdbId > 0
-        ? game.igdbId
-        : null,
-    igdbUrl: typeof game.igdbUrl === 'string' ? game.igdbUrl : null,
-    igdbTtbHastilySeconds: asNullablePositiveInteger(game.igdbTtbHastilySeconds),
-    igdbTtbNormallySeconds: asNullablePositiveInteger(game.igdbTtbNormallySeconds),
-    igdbTtbCompletelySeconds: asNullablePositiveInteger(game.igdbTtbCompletelySeconds),
-    igdbTtbCount: asNullableNonNegativeInteger(game.igdbTtbCount),
-    igdbTtbUpdatedAt: typeof game.igdbTtbUpdatedAt === 'string' ? game.igdbTtbUpdatedAt : null,
-    igdbDevelopers: asNullableStringList(game.igdbDevelopers),
-    igdbPublishers: asNullableStringList(game.igdbPublishers),
-    igdbThemes: asNullableStringList(game.igdbThemes),
-    igdbGameModes: asNullableStringList(game.igdbGameModes),
     releaseYear: asNullableReleaseYear(game.releaseYear),
     priority: asNullablePriority(game.priority),
     developer: asNullableString(game.developer),
@@ -232,17 +219,6 @@ function projectGame(game: CanonicalGame, journeys: Journey[], includeDeleted = 
     externalReferences: game.externalReferences,
     metadataReviewedAt: game.metadataReviewedAt,
     coverSource: game.cover?.source ?? null,
-    igdbId: null,
-    igdbUrl: null,
-    igdbTtbHastilySeconds: null,
-    igdbTtbNormallySeconds: null,
-    igdbTtbCompletelySeconds: null,
-    igdbTtbCount: null,
-    igdbTtbUpdatedAt: null,
-    igdbDevelopers: null,
-    igdbPublishers: null,
-    igdbThemes: null,
-    igdbGameModes: null,
     releaseYear: game.releaseYear,
     priority: currentJourney.priority,
     developer: game.developers[0] ?? null,
@@ -588,16 +564,23 @@ function asNullableRating(value: unknown) {
     : null
 }
 
-function asNullablePositiveInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
-}
-
-function asNullableNonNegativeInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
-}
-
 function asNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+function asNullableStringList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  return [
+    ...new Set(
+      value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ]
 }
 
 function asNullablePriority(value: unknown) {
@@ -621,21 +604,6 @@ function asNullableOwnershipType(value: unknown): Game['ownershipType'] {
   return GAME_OWNERSHIP_TYPES.includes(value as (typeof GAME_OWNERSHIP_TYPES)[number])
     ? value as Game['ownershipType']
     : null
-}
-
-function asNullableStringList(value: unknown) {
-  if (!Array.isArray(value)) {
-    return null
-  }
-
-  return [
-    ...new Set(
-      value
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item !== ''),
-    ),
-  ]
 }
 
 export function normalizeGame(value: unknown): Game {
@@ -662,20 +630,6 @@ export function normalizeGame(value: unknown): Game {
     platform: asString(value.platform),
     ownershipType: asNullableOwnershipType(value.ownershipType),
     tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === 'string') : [],
-    igdbId:
-      typeof value.igdbId === 'number' && Number.isInteger(value.igdbId) && value.igdbId > 0
-        ? value.igdbId
-        : null,
-    igdbUrl: typeof value.igdbUrl === 'string' ? value.igdbUrl : null,
-    igdbTtbHastilySeconds: asNullablePositiveInteger(value.igdbTtbHastilySeconds),
-    igdbTtbNormallySeconds: asNullablePositiveInteger(value.igdbTtbNormallySeconds),
-    igdbTtbCompletelySeconds: asNullablePositiveInteger(value.igdbTtbCompletelySeconds),
-    igdbTtbCount: asNullableNonNegativeInteger(value.igdbTtbCount),
-    igdbTtbUpdatedAt: typeof value.igdbTtbUpdatedAt === 'string' ? value.igdbTtbUpdatedAt : null,
-    igdbDevelopers: asNullableStringList(value.igdbDevelopers),
-    igdbPublishers: asNullableStringList(value.igdbPublishers),
-    igdbThemes: asNullableStringList(value.igdbThemes),
-    igdbGameModes: asNullableStringList(value.igdbGameModes),
     releaseYear: asNullableReleaseYear(value.releaseYear),
     priority: asNullablePriority(value.priority),
     developer: asNullableString(value.developer),

@@ -118,7 +118,6 @@ function createBacklogStore() {
     platform: '',
     ownershipType: '',
     tags: '',
-    igdbId: '',
     wikidataId: '',
     wikipediaTitle: '',
     coverSourceUrl: '',
@@ -482,15 +481,7 @@ function createBacklogStore() {
       ...source,
       tags: [...source.tags],
       externalReferences: source.externalReferences?.map((reference) => ({ ...reference })),
-      igdbDevelopers: cloneStringList(source.igdbDevelopers),
-      igdbPublishers: cloneStringList(source.igdbPublishers),
-      igdbThemes: cloneStringList(source.igdbThemes),
-      igdbGameModes: cloneStringList(source.igdbGameModes),
     }
-  }
-
-  function cloneStringList(value: string[] | null | undefined) {
-    return Array.isArray(value) ? [...toRaw(value)] : null
   }
 
   function resetForm() {
@@ -502,7 +493,6 @@ function createBacklogStore() {
     gameForm.platform = ''
     gameForm.ownershipType = ''
     gameForm.tags = ''
-    gameForm.igdbId = ''
     gameForm.wikidataId = ''
     gameForm.wikipediaTitle = ''
     gameForm.coverSourceUrl = ''
@@ -536,7 +526,6 @@ function createBacklogStore() {
     gameForm.platform = game.platform
     gameForm.ownershipType = game.ownershipType ?? ''
     gameForm.tags = game.tags.join(', ')
-    gameForm.igdbId = game.igdbId === null ? '' : String(game.igdbId)
     gameForm.wikidataId =
       game.externalReferences?.find((reference) => reference.provider === 'wikidata')?.externalId ?? ''
     gameForm.wikipediaTitle =
@@ -745,8 +734,6 @@ function createBacklogStore() {
       const manualDeveloper = gameForm.developer.trim()
       const manualPublisher = gameForm.publisher.trim()
       const manualCoverUrl = gameForm.coverUrl.trim()
-      const nextIgdbId = existingPlain?.igdbId ?? null
-      const shouldPreserveIgdbMetadata = existingPlain?.igdbId === nextIgdbId
       const normalizedReleaseYear = normalizeReleaseYear(gameForm.releaseYear)
       const wikidataId = /^Q\d+$/.test(gameForm.wikidataId) ? gameForm.wikidataId : ''
       const existingExternalReferences = existingPlain?.externalReferences ?? []
@@ -798,22 +785,11 @@ function createBacklogStore() {
           (existingExternalReferences.find((reference) => reference.provider === 'wikidata')?.externalId ?? '')
             ? now
             : existingPlain?.metadataReviewedAt ?? null,
-        igdbId: nextIgdbId,
-        igdbUrl: shouldPreserveIgdbMetadata ? existingPlain?.igdbUrl ?? null : null,
-        igdbTtbHastilySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbHastilySeconds ?? null : null,
-        igdbTtbNormallySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbNormallySeconds ?? null : null,
-        igdbTtbCompletelySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbCompletelySeconds ?? null : null,
-        igdbTtbCount: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbCount ?? null : null,
-        igdbTtbUpdatedAt: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbUpdatedAt ?? null : null,
-        igdbDevelopers: shouldPreserveIgdbMetadata ? existingPlain?.igdbDevelopers ?? null : null,
-        igdbPublishers: shouldPreserveIgdbMetadata ? existingPlain?.igdbPublishers ?? null : null,
-        igdbThemes: shouldPreserveIgdbMetadata ? existingPlain?.igdbThemes ?? null : null,
-        igdbGameModes: shouldPreserveIgdbMetadata ? existingPlain?.igdbGameModes ?? null : null,
-        releaseYear: normalizedReleaseYear ?? (shouldPreserveIgdbMetadata ? existingPlain?.releaseYear ?? null : null),
+        releaseYear: normalizedReleaseYear ?? existingPlain?.releaseYear ?? null,
         priority: gameForm.priority || null,
         developer: manualDeveloper || null,
         publisher: manualPublisher || null,
-        coverUrl: manualCoverUrl || (shouldPreserveIgdbMetadata ? existingPlain?.coverUrl ?? null : null),
+        coverUrl: manualCoverUrl || existingPlain?.coverUrl || null,
         coverSource:
           manualCoverUrl && manualCoverUrl === gameForm.coverSourceUrl && gameForm.coverSourcePageUrl
             ? { provider: 'wikipedia', pageUrl: gameForm.coverSourcePageUrl }

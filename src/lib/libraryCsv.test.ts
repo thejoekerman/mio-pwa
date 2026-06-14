@@ -17,7 +17,6 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     platform: '',
     ownershipType: null,
     tags: ['Keep'],
-    igdbId: null,
     finishedAt: null,
     pausedAt: null,
     nudgeAt: null,

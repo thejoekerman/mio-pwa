@@ -4,7 +4,6 @@ import GameCover from './GameCover.vue'
 import { useSettings } from '../composables/useSettings'
 import { useI18n } from '../i18n'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
-import { getTimeToBeatHours } from '../lib/timeToBeat'
 import {
   GAME_OWNERSHIP_FILTERS,
   GAME_SORT_OPTIONS,
@@ -135,7 +134,6 @@ const listMetadata = computed(() =>
         ...game.tags,
         game.releaseYear ? String(game.releaseYear) : null,
         creditLine(game),
-        formatTimeToBeat(game),
         game.rating !== null ? `${game.rating}/10` : null,
         game.finishedAt ? t('library.finishedOn', { date: game.finishedAt }) : null,
       ].filter((item): item is string => Boolean(item)),
@@ -143,26 +141,20 @@ const listMetadata = computed(() =>
   ),
 )
 
-function formatTimeToBeat(game: Game) {
-  const hours = getTimeToBeatHours(game)
-
-  return hours === null ? null : `~${hours} h TTB`
-}
-
 function creditLine(game: Game) {
   const developer = getDisplayDeveloper(game)
   const publisher = getDisplayPublisher(game)
 
   if (developer && publisher) {
-    return t('detail.igdbCreditsFull', { developers: developer, publishers: publisher })
+    return t('detail.creditsFull', { developers: developer, publishers: publisher })
   }
 
   if (developer) {
-    return t('detail.igdbCreditsDevelopers', { developers: developer })
+    return t('detail.creditsDevelopers', { developers: developer })
   }
 
   if (publisher) {
-    return t('detail.igdbCreditsPublishers', { publishers: publisher })
+    return t('detail.creditsPublishers', { publishers: publisher })
   }
 
   return null

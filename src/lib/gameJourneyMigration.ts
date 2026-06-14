@@ -12,12 +12,26 @@ export interface GameJourneyMigration {
   logs: JourneyLogEntry[]
 }
 
+export type LegacyGame = Game & {
+  igdbId?: number | null
+  igdbUrl?: string | null
+  igdbTtbHastilySeconds?: number | null
+  igdbTtbNormallySeconds?: number | null
+  igdbTtbCompletelySeconds?: number | null
+  igdbTtbCount?: number | null
+  igdbTtbUpdatedAt?: string | null
+  igdbDevelopers?: string[] | null
+  igdbPublishers?: string[] | null
+  igdbThemes?: string[] | null
+  igdbGameModes?: string[] | null
+}
+
 export function initialJourneyIdForGame(gameId: string) {
   return `${gameId}:initial-journey`
 }
 
 export function migrateLegacyLibrary(
-  legacyGames: Game[],
+  legacyGames: LegacyGame[],
   legacyLogs: LogEntry[],
 ): GameJourneyMigration {
   const journeyIdByGameId = new Map(
@@ -31,13 +45,13 @@ export function migrateLegacyLibrary(
   }
 }
 
-export function migrateLegacyGame(game: Game): CanonicalGame {
+export function migrateLegacyGame(game: LegacyGame): CanonicalGame {
   return {
     id: game.id,
     title: game.title,
     releaseYear: game.releaseYear ?? null,
-    developers: visibleCredits(game.developer, game.igdbDevelopers),
-    publishers: visibleCredits(game.publisher, game.igdbPublishers),
+    developers: visibleCredits(game.developer),
+    publishers: visibleCredits(game.publisher),
     genres: [],
     themes: [],
     gameModes: [],
@@ -60,7 +74,7 @@ export function migrateLegacyGame(game: Game): CanonicalGame {
   }
 }
 
-export function migrateLegacyJourney(game: Game): Journey {
+export function migrateLegacyJourney(game: LegacyGame): Journey {
   return {
     id: initialJourneyIdForGame(game.id),
     gameId: game.id,
@@ -101,10 +115,10 @@ export function migrateLegacyLog(
   }
 }
 
-function visibleCredits(manualValue: string | null | undefined, fallback: string[] | null | undefined) {
+function visibleCredits(manualValue: string | null | undefined) {
   const manualCredit = manualValue?.trim()
 
-  return manualCredit ? [manualCredit] : uniqueStrings(fallback ?? [])
+  return manualCredit ? [manualCredit] : []
 }
 
 function uniqueStrings(values: string[]) {

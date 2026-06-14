@@ -1,12 +1,9 @@
-import { getTimeToBeatHours } from './timeToBeat'
 import { getCurrentJourney, hasActiveJourney } from './gameJourneyState'
 import type { Game, GamePriority, Journey } from '../types'
 
 export type RecommendationReason =
   | { kind: 'priority'; priority: GamePriority }
   | { kind: 'taste'; tag: string }
-  | { kind: 'timeToBeat'; hours: number }
-  | { kind: 'bigAdventure'; hours: number }
   | { kind: 'longWaiting'; months: number }
   | { kind: 'ready' }
 
@@ -100,19 +97,6 @@ function scoreBacklogGame(
     }
   } else if (tasteMatch && tasteMatch.score < 0) {
     score += Math.max(-8, Math.round(tasteMatch.score * 3))
-  }
-
-  const timeToBeatHours = getTimeToBeatHours(game)
-
-  if (timeToBeatHours !== null) {
-    const timeScore = scoreTimeToBeat(timeToBeatHours)
-    score += timeScore
-
-    if (timeScore > 0) {
-      scoredReasons.push({ reason: { kind: 'timeToBeat', hours: timeToBeatHours }, score: timeScore })
-    } else if (timeToBeatHours >= 60 && journey.priority === 'high-interest') {
-      scoredReasons.push({ reason: { kind: 'bigAdventure', hours: timeToBeatHours }, score: 8 })
-    }
   }
 
   const waitingMonths = getWaitingMonths(journey.createdAt, now)
@@ -234,16 +218,6 @@ function groupJourneysByGameId(journeys: Journey[]) {
   }
 
   return grouped
-}
-
-function scoreTimeToBeat(hours: number) {
-  if (hours <= 12) return 14
-  if (hours <= 25) return 10
-  if (hours <= 45) return 6
-  if (hours <= 70) return 2
-  if (hours >= 100) return -4
-
-  return 0
 }
 
 function getWaitingMonths(createdAt: string, now: Date) {
