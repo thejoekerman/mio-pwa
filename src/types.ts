@@ -218,10 +218,39 @@ export interface BackupData {
   earnedTrophies?: EarnedTrophy[]
 }
 
-export interface SyncSnapshot {
-  games: Game[]
-  logs: LogEntry[]
+export type SyncEntity = 'game' | 'journey' | 'log' | 'earnedTrophy'
+
+export interface PendingSyncRecord {
+  key: string
+  entity: SyncEntity
+  id: string
+  queuedUpdatedAt: string
+}
+
+export interface SyncState {
+  id: 'active'
+  serverIdentity: string
+  serverCursor: number
+}
+
+export interface SyncChanges {
+  games: CanonicalGame[]
+  journeys: Journey[]
+  logs: JourneyLogEntry[]
   earnedTrophies: EarnedTrophy[]
+}
+
+export interface SyncRequest {
+  cursor: number | null
+  full: boolean
+  changes: SyncChanges
+}
+
+export interface SyncAcknowledgements {
+  games: string[]
+  journeys: string[]
+  logs: string[]
+  earnedTrophies: string[]
 }
 
 export interface SyncUser {
@@ -240,7 +269,15 @@ export interface SyncConnectionResponse {
   capabilities: SyncCapabilities
 }
 
-export interface SyncResponse extends SyncSnapshot {
+export interface SyncResponse {
+  cursor: number
+  acknowledged: SyncAcknowledgements
+  changes: SyncChanges
+  totals: {
+    games: number
+    journeys: number
+    logs: number
+  }
   syncedAt: string
 }
 

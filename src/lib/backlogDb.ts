@@ -14,7 +14,13 @@ import {
   type JourneyLogEntry,
   type LogEntry,
   type PlaytimeEstimates,
-  type SyncSnapshot,
+  type PendingSyncRecord,
+  type SyncAcknowledgements,
+  type SyncChanges,
+  type SyncEntity,
+  type SyncRequest,
+  type SyncResponse,
+  type SyncState,
 } from '../types'
 import { isDemoMode } from './appMode'
 import { demoGames, demoLogs } from './demoData'
@@ -39,6 +45,8 @@ export class BacklogDatabase extends Dexie {
   journeys!: EntityTable<Journey, 'id'>
   logs!: EntityTable<JourneyLogEntry, 'id'>
   earnedTrophies!: EntityTable<EarnedTrophy, 'id'>
+  pendingSyncRecords!: EntityTable<PendingSyncRecord, 'key'>
+  syncStates!: EntityTable<SyncState, 'id'>
 
   constructor(databaseName = isDemoMode ? 'miolog-demo-backlog' : 'games-backlog') {
     super(databaseName)
@@ -161,10 +169,44 @@ export class BacklogDatabase extends Dexie {
           await transaction.table('logs').bulkPut(migration.logs)
         }
       })
+
+    this.version(8).stores({
+      games: 'id, updatedAt, title, deletedAt',
+      journeys: 'id, gameId, updatedAt, status, deletedAt',
+      logs: 'id, journeyId, createdAt, updatedAt, deletedAt',
+      earnedTrophies: 'id, trophyId, earnedAt, updatedAt, deletedAt',
+      pendingSyncRecords: 'key, entity, id, queuedUpdatedAt',
+      syncStates: 'id, serverIdentity, serverCursor',
+    })
   }
 }
 
 const db = new BacklogDatabase()
+
+function pendingSyncKey(entity: SyncEntity, id: string) {
+  return `${entity}:${id}`
+}
+
+function pendingSyncRecord(
+  entity: SyncEntity,
+  record: { id: string; updatedAt: string },
+): PendingSyncRecord {
+  return {
+    key: pendingSyncKey(entity, record.id),
+    entity,
+    id: record.id,
+    queuedUpdatedAt: record.updatedAt,
+  }
+}
+
+async function queueSyncRecords(
+  entity: SyncEntity,
+  records: { id: string; updatedAt: string }[],
+) {
+  if (records.length > 0) {
+    await db.pendingSyncRecords.bulkPut(records.map((record) => pendingSyncRecord(entity, record)))
+  }
+}
 
 function normalizeStoredGame(game: StoredGame): Game {
   return {
@@ -350,24 +392,32 @@ export async function getAllEarnedTrophies(includeDeleted = false) {
 }
 
 export async function saveGame(game: Game) {
-  await db.transaction('rw', db.games, db.journeys, async () => {
+  await db.transaction('rw', db.games, db.journeys, db.pendingSyncRecords, async () => {
     const existingGame = await db.games.get(game.id)
     const existingJourneys = await db.journeys.where('gameId').equals(game.id).toArray()
     const currentJourney = getCurrentJourney(existingJourneys)
+    const canonicalGame = projectLegacyGameToCanonical(game, existingGame)
+    const journey = projectLegacyGameToJourney(game, currentJourney)
 
-    await db.games.put(projectLegacyGameToCanonical(game, existingGame))
-    await db.journeys.put(projectLegacyGameToJourney(game, currentJourney))
+    await db.games.put(canonicalGame)
+    await db.journeys.put(journey)
+    await queueSyncRecords('game', [canonicalGame])
+    await queueSyncRecords('journey', [journey])
   })
 }
 
 export async function saveGameMetadata(game: Game) {
-  const existingGame = await db.games.get(game.id)
+  await db.transaction('rw', db.games, db.pendingSyncRecords, async () => {
+    const existingGame = await db.games.get(game.id)
+    const canonicalGame = projectLegacyGameToCanonical(game, existingGame)
 
-  await db.games.put(projectLegacyGameToCanonical(game, existingGame))
+    await db.games.put(canonicalGame)
+    await queueSyncRecords('game', [canonicalGame])
+  })
 }
 
 export async function deleteGame(gameId: string) {
-  await db.transaction('rw', db.games, db.journeys, db.logs, async () => {
+  await db.transaction('rw', db.games, db.journeys, db.logs, db.pendingSyncRecords, async () => {
     const now = new Date().toISOString()
     const game = await db.games.get(gameId)
 
@@ -375,43 +425,45 @@ export async function deleteGame(gameId: string) {
       return
     }
 
-    await db.games.put({
+    const deletedGame = {
       ...game,
       updatedAt: now,
       deletedAt: now,
-    })
+    }
+    await db.games.put(deletedGame)
+    await queueSyncRecords('game', [deletedGame])
 
     const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
     const journeyIds = journeys.map((journey) => journey.id)
+    const deletedJourneys = journeys.map((journey) => ({
+      ...journey,
+      updatedAt: now,
+      deletedAt: now,
+    }))
 
-    if (journeys.length > 0) {
-      await db.journeys.bulkPut(
-        journeys.map((journey) => ({
-          ...journey,
-          updatedAt: now,
-          deletedAt: now,
-        })),
-      )
+    if (deletedJourneys.length > 0) {
+      await db.journeys.bulkPut(deletedJourneys)
+      await queueSyncRecords('journey', deletedJourneys)
     }
 
     for (const journeyId of journeyIds) {
       const logs = await db.logs.where('journeyId').equals(journeyId).toArray()
+      const deletedLogs = logs.map((logEntry) => ({
+        ...logEntry,
+        updatedAt: now,
+        deletedAt: now,
+      }))
 
-      if (logs.length > 0) {
-        await db.logs.bulkPut(
-          logs.map((logEntry) => ({
-            ...logEntry,
-            updatedAt: now,
-            deletedAt: now,
-          })),
-        )
+      if (deletedLogs.length > 0) {
+        await db.logs.bulkPut(deletedLogs)
+        await queueSyncRecords('log', deletedLogs)
       }
     }
   })
 }
 
 export async function deleteJourney(journeyId: string) {
-  return db.transaction('rw', db.journeys, db.logs, async () => {
+  return db.transaction('rw', db.journeys, db.logs, db.pendingSyncRecords, async () => {
     const now = new Date().toISOString()
     const journey = await db.journeys.get(journeyId)
 
@@ -424,13 +476,15 @@ export async function deleteJourney(journeyId: string) {
       return false
     }
 
-    await db.journeys.put({ ...journey, updatedAt: now, deletedAt: now })
+    const deletedJourney = { ...journey, updatedAt: now, deletedAt: now }
+    await db.journeys.put(deletedJourney)
+    await queueSyncRecords('journey', [deletedJourney])
 
     const logs = await db.logs.where('journeyId').equals(journeyId).toArray()
-    if (logs.length > 0) {
-      await db.logs.bulkPut(
-        logs.map((logEntry) => ({ ...logEntry, updatedAt: now, deletedAt: now })),
-      )
+    const deletedLogs = logs.map((logEntry) => ({ ...logEntry, updatedAt: now, deletedAt: now }))
+    if (deletedLogs.length > 0) {
+      await db.logs.bulkPut(deletedLogs)
+      await queueSyncRecords('log', deletedLogs)
     }
 
     return true
@@ -481,13 +535,17 @@ export async function saveLogEntry(logEntry: LogEntry) {
     throw new Error(`Cannot save log "${logEntry.id}" without a Journey for game "${logEntry.gameId}".`)
   }
 
-  await db.logs.put({
+  const journeyLog = {
     id: logEntry.id,
     journeyId: currentJourney.id,
     content: logEntry.content,
     createdAt: logEntry.createdAt,
     updatedAt: logEntry.updatedAt,
     deletedAt: logEntry.deletedAt,
+  }
+  await db.transaction('rw', db.logs, db.pendingSyncRecords, async () => {
+    await db.logs.put(journeyLog)
+    await queueSyncRecords('log', [journeyLog])
   })
 }
 
@@ -498,13 +556,17 @@ export async function saveLogEntryForJourney(logEntry: LogEntry, journeyId: stri
     throw new Error(`Cannot save log "${logEntry.id}" without matching Journey "${journeyId}".`)
   }
 
-  await db.logs.put({
+  const journeyLog = {
     id: logEntry.id,
     journeyId,
     content: logEntry.content,
     createdAt: logEntry.createdAt,
     updatedAt: logEntry.updatedAt,
     deletedAt: logEntry.deletedAt,
+  }
+  await db.transaction('rw', db.logs, db.pendingSyncRecords, async () => {
+    await db.logs.put(journeyLog)
+    await queueSyncRecords('log', [journeyLog])
   })
 }
 
@@ -513,7 +575,10 @@ export async function saveEarnedTrophies(earnedTrophies: EarnedTrophy[]) {
     return
   }
 
-  await db.earnedTrophies.bulkPut(earnedTrophies)
+  await db.transaction('rw', db.earnedTrophies, db.pendingSyncRecords, async () => {
+    await db.earnedTrophies.bulkPut(earnedTrophies)
+    await queueSyncRecords('earnedTrophy', earnedTrophies)
+  })
 }
 
 export async function ensureDemoData() {
@@ -840,13 +905,16 @@ export async function getJourneysForGame(gameId: string, includeDeleted = false)
 }
 
 export async function saveJourney(journey: Journey) {
-  const game = await db.games.get(journey.gameId)
+  await db.transaction('rw', db.games, db.journeys, db.pendingSyncRecords, async () => {
+    const game = await db.games.get(journey.gameId)
 
-  if (!game) {
-    throw new Error(`Cannot save Journey "${journey.id}" without Game "${journey.gameId}".`)
-  }
+    if (!game) {
+      throw new Error(`Cannot save Journey "${journey.id}" without Game "${journey.gameId}".`)
+    }
 
-  await db.journeys.put(journey)
+    await db.journeys.put(journey)
+    await queueSyncRecords('journey', [journey])
+  })
 }
 
 export async function getAllJourneyLogs(includeDeleted = false) {
@@ -915,30 +983,41 @@ export async function importBackupData(
   const normalizedEarnedTrophies = dedupeById(earnedTrophies)
   validateEntityOwnership(normalizedGames, normalizedJourneys, normalizedLogs)
 
-  await db.transaction('rw', db.games, db.journeys, db.logs, db.earnedTrophies, async () => {
-    if (mode === 'replace') {
-      await db.games.clear()
-      await db.journeys.clear()
-      await db.logs.clear()
-      await db.earnedTrophies.clear()
-    }
+  await db.transaction(
+    'rw',
+    [db.games, db.journeys, db.logs, db.earnedTrophies, db.pendingSyncRecords, db.syncStates],
+    async () => {
+      if (mode === 'replace') {
+        await db.games.clear()
+        await db.journeys.clear()
+        await db.logs.clear()
+        await db.earnedTrophies.clear()
+        await db.pendingSyncRecords.clear()
+        await db.syncStates.clear()
+      }
 
-    if (normalizedGames.length > 0) {
-      await db.games.bulkPut(normalizedGames)
-    }
+      if (normalizedGames.length > 0) {
+        await db.games.bulkPut(normalizedGames)
+      }
 
-    if (normalizedJourneys.length > 0) {
-      await db.journeys.bulkPut(normalizedJourneys)
-    }
+      if (normalizedJourneys.length > 0) {
+        await db.journeys.bulkPut(normalizedJourneys)
+      }
 
-    if (normalizedLogs.length > 0) {
-      await db.logs.bulkPut(normalizedLogs)
-    }
+      if (normalizedLogs.length > 0) {
+        await db.logs.bulkPut(normalizedLogs)
+      }
 
-    if (normalizedEarnedTrophies.length > 0) {
-      await db.earnedTrophies.bulkPut(normalizedEarnedTrophies)
-    }
-  })
+      if (normalizedEarnedTrophies.length > 0) {
+        await db.earnedTrophies.bulkPut(normalizedEarnedTrophies)
+      }
+
+      await queueSyncRecords('game', normalizedGames)
+      await queueSyncRecords('journey', normalizedJourneys)
+      await queueSyncRecords('log', normalizedLogs)
+      await queueSyncRecords('earnedTrophy', normalizedEarnedTrophies)
+    },
+  )
 
   return {
     games: normalizedGames.length,
@@ -966,72 +1045,140 @@ function validateEntityOwnership(
   }
 }
 
-export async function createSyncSnapshot(): Promise<SyncSnapshot> {
+const emptySyncChanges = (): SyncChanges => ({
+  games: [],
+  journeys: [],
+  logs: [],
+  earnedTrophies: [],
+})
+
+function pendingRecordsForChanges(changes: SyncChanges) {
+  return [
+    ...changes.games.map((record) => pendingSyncRecord('game', record)),
+    ...changes.journeys.map((record) => pendingSyncRecord('journey', record)),
+    ...changes.logs.map((record) => pendingSyncRecord('log', record)),
+    ...changes.earnedTrophies.map((record) => pendingSyncRecord('earnedTrophy', record)),
+  ]
+}
+
+async function getFullSyncChanges(): Promise<SyncChanges> {
+  const [games, journeys, logs, earnedTrophies] = await Promise.all([
+    getAllCanonicalGames(true),
+    getAllJourneys(true),
+    getAllJourneyLogs(true),
+    getAllEarnedTrophies(true),
+  ])
+
+  return { games, journeys, logs, earnedTrophies }
+}
+
+async function getPendingSyncChanges(pending: PendingSyncRecord[]): Promise<SyncChanges> {
+  const changes = emptySyncChanges()
+
+  for (const record of pending) {
+    if (record.entity === 'game') {
+      const game = await db.games.get(record.id)
+      if (game) changes.games.push(game)
+    } else if (record.entity === 'journey') {
+      const journey = await db.journeys.get(record.id)
+      if (journey) changes.journeys.push(journey)
+    } else if (record.entity === 'log') {
+      const log = await db.logs.get(record.id)
+      if (log) changes.logs.push(log)
+    } else {
+      const trophy = await db.earnedTrophies.get(record.id)
+      if (trophy) changes.earnedTrophies.push(trophy)
+    }
+  }
+
+  return changes
+}
+
+export async function createSyncRequest(serverIdentity: string): Promise<{
+  request: SyncRequest
+  submitted: PendingSyncRecord[]
+}> {
+  const [state, pending] = await Promise.all([
+    db.syncStates.get('active'),
+    db.pendingSyncRecords.toArray(),
+  ])
+  const full = !state || state.serverIdentity !== serverIdentity
+  const changes = full ? await getFullSyncChanges() : await getPendingSyncChanges(pending)
+
   return {
-    games: await getAllGames(true),
-    logs: await getAllLogs(true),
-    earnedTrophies: await getAllEarnedTrophies(true),
+    request: {
+      cursor: full ? null : state.serverCursor,
+      full,
+      changes,
+    },
+    submitted: pendingRecordsForChanges(changes),
   }
 }
 
-export async function replaceWithSyncSnapshot(snapshot: SyncSnapshot) {
-  const [existingGames, existingJourneys] = await Promise.all([
-    getAllCanonicalGames(true),
-    getAllJourneys(true),
-  ])
-  const localMetadataByGameId = new Map(
-    existingGames.map((game) => [
-      game.id,
-      {
-        developers: game.developers,
-        publishers: game.publishers,
-        releaseYear: game.releaseYear,
-      },
-    ]),
-  )
-  const localPriorityByGameId = new Map(
-    existingJourneys.map((journey) => [journey.gameId, journey.priority]),
-  )
-  const migration = migrateLegacyLibrary(
-    snapshot.games.map(normalizeGame),
-    snapshot.logs.map(normalizeLogEntry),
-  )
+async function recordsWonByServer<T extends { id: string; updatedAt: string }>(
+  records: T[],
+  getExisting: (id: string) => Promise<T | undefined>,
+) {
+  const winners: T[] = []
 
-  await db.transaction('rw', db.games, db.journeys, db.logs, db.earnedTrophies, async () => {
-    await db.games.clear()
-    await db.journeys.clear()
-    await db.logs.clear()
-    await db.earnedTrophies.clear()
+  for (const record of records) {
+    const existing = await getExisting(record.id)
+    if (!existing || existing.updatedAt <= record.updatedAt) {
+      winners.push(record)
+    }
+  }
 
-    if (migration.games.length > 0) {
-      await db.games.bulkPut(
-        migration.games.map((game) => {
-          const localMetadata = localMetadataByGameId.get(game.id)
+  return winners
+}
 
-          return localMetadata
-            ? {
-                ...game,
-                developers: game.developers.length > 0 ? game.developers : localMetadata.developers,
-                publishers: game.publishers.length > 0 ? game.publishers : localMetadata.publishers,
-                releaseYear: game.releaseYear ?? localMetadata.releaseYear,
-              }
-            : game
-        }),
+function acknowledgedKeys(
+  submitted: PendingSyncRecord[],
+  acknowledgements: SyncAcknowledgements,
+) {
+  const acknowledgedIds = {
+    game: new Set(acknowledgements.games),
+    journey: new Set(acknowledgements.journeys),
+    log: new Set(acknowledgements.logs),
+    earnedTrophy: new Set(acknowledgements.earnedTrophies),
+  }
+
+  return submitted.filter((record) => acknowledgedIds[record.entity].has(record.id))
+}
+
+export async function applySyncResponse(
+  serverIdentity: string,
+  submitted: PendingSyncRecord[],
+  response: SyncResponse,
+) {
+  await db.transaction(
+    'rw',
+    [db.games, db.journeys, db.logs, db.earnedTrophies, db.pendingSyncRecords, db.syncStates],
+    async () => {
+      const games = await recordsWonByServer(response.changes.games, (id) => db.games.get(id))
+      const journeys = await recordsWonByServer(response.changes.journeys, (id) => db.journeys.get(id))
+      const logs = await recordsWonByServer(response.changes.logs, (id) => db.logs.get(id))
+      const earnedTrophies = await recordsWonByServer(
+        response.changes.earnedTrophies,
+        (id) => db.earnedTrophies.get(id),
       )
-      await db.journeys.bulkPut(
-        migration.journeys.map((journey) => ({
-          ...journey,
-          priority: journey.priority ?? localPriorityByGameId.get(journey.gameId) ?? null,
-        })),
-      )
-    }
 
-    if (migration.logs.length > 0) {
-      await db.logs.bulkPut(migration.logs)
-    }
+      await db.games.bulkPut(games)
+      await db.journeys.bulkPut(journeys)
+      await db.logs.bulkPut(logs)
+      await db.earnedTrophies.bulkPut(earnedTrophies)
 
-    if (snapshot.earnedTrophies.length > 0) {
-      await db.earnedTrophies.bulkPut(snapshot.earnedTrophies.map(normalizeEarnedTrophy))
-    }
-  })
+      for (const acknowledged of acknowledgedKeys(submitted, response.acknowledged)) {
+        const pending = await db.pendingSyncRecords.get(acknowledged.key)
+        if (pending?.queuedUpdatedAt === acknowledged.queuedUpdatedAt) {
+          await db.pendingSyncRecords.delete(acknowledged.key)
+        }
+      }
+
+      await db.syncStates.put({
+        id: 'active',
+        serverIdentity,
+        serverCursor: response.cursor,
+      })
+    },
+  )
 }

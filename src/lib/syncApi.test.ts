@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { requestReviewDraft, syncWithBackend, testSyncConnection } from './syncApi'
-import type { SyncSnapshot } from '../types'
+import type { SyncRequest } from '../types'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -9,8 +9,12 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-function emptySnapshot(): SyncSnapshot {
-  return { games: [], logs: [], earnedTrophies: [] }
+function emptyRequest(): SyncRequest {
+  return {
+    cursor: null,
+    full: true,
+    changes: { games: [], journeys: [], logs: [], earnedTrophies: [] },
+  }
 }
 
 describe('syncApi', () => {
@@ -74,14 +78,14 @@ describe('syncApi', () => {
         jsonResponse(200, { games: [], logs: [], earnedTrophies: [], syncedAt: '2026-01-01T00:00:00Z' }),
       )
 
-      await syncWithBackend('https://example.test', 'token', emptySnapshot())
+      await syncWithBackend('https://example.test', 'token', emptyRequest())
 
       const [url, init] = fetchMock.mock.calls[0]
       expect(url).toBe('https://example.test/api/sync')
       expect(init?.method).toBe('POST')
       const headers = init?.headers as Record<string, string>
       expect(headers['Content-Type']).toBe('application/json')
-      expect(init?.body).toBe(JSON.stringify(emptySnapshot()))
+      expect(init?.body).toBe(JSON.stringify(emptyRequest()))
     })
 
     it('url-encodes the gameId in the review-draft path', async () => {

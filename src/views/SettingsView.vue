@@ -480,8 +480,8 @@ async function handleSyncNow() {
     const result = await syncNow()
     syncNoticeTone.value = 'success'
     syncNotice.value = t('settings.syncCompletedNotice', {
-      games: result.games.filter((game) => game.deletedAt === null).length,
-      logs: result.logs.filter((logEntry) => logEntry.deletedAt === null).length,
+      games: result.totals.games,
+      logs: result.totals.logs,
     })
   } catch (error) {
     console.error(error)

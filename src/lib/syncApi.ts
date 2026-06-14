@@ -2,8 +2,8 @@ import type {
   AppLanguage,
   ReviewDraftResponse,
   SyncConnectionResponse,
+  SyncRequest,
   SyncResponse,
-  SyncSnapshot,
 } from '../types'
 
 function normalizeApiBaseUrl(value: string) {
@@ -87,11 +87,11 @@ export async function testSyncConnection(
 export async function syncWithBackend(
   apiBaseUrl: string,
   syncToken: string,
-  snapshot: SyncSnapshot,
+  request: SyncRequest,
 ) {
   return performRequest<SyncResponse>('/api/sync', apiBaseUrl, syncToken, {
     method: 'POST',
-    body: JSON.stringify(snapshot),
+    body: JSON.stringify(request),
   })
 }
 

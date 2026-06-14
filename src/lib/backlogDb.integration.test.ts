@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   createBackupData,
+  createSyncRequest,
   deleteGame,
   deleteJourney,
   getAllEarnedTrophies,
@@ -12,7 +13,7 @@ import {
   getLogsForGame,
   getLogsForJourney,
   importBackupData,
-  replaceWithSyncSnapshot,
+  applySyncResponse,
   saveEarnedTrophies,
   saveGame,
   saveGameMetadata,
@@ -77,7 +78,7 @@ function makeTrophy(overrides: Partial<EarnedTrophy> = {}): EarnedTrophy {
 
 describe('backlogDb (Dexie / fake-indexeddb)', () => {
   beforeEach(async () => {
-    await replaceWithSyncSnapshot({ games: [], logs: [], earnedTrophies: [] })
+    await importBackupData({ games: [], journeys: [], logs: [], earnedTrophies: [] }, 'replace')
   })
 
   describe('save + fetch round-trip', () => {
@@ -623,56 +624,57 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
     })
   })
 
-  describe('replaceWithSyncSnapshot field carve-out', () => {
-    it('preserves locally-set developer/publisher/releaseYear/priority when the server returns null for them', async () => {
-      // This is the carve-out tested at the composable level in
-      // sync.integration.test.ts — here we hit it directly at the lib boundary
-      // to lock in the lower-level contract.
-      await saveGame(
-        makeGame({
-          id: 'tunic',
-          developer: 'Andrew Shouldice',
-          publisher: 'Finji',
-          releaseYear: 2022,
-          priority: 'high-interest',
-        }),
-      )
+  describe('incremental sync persistence', () => {
+    it('queues local writes and clears only the acknowledged submitted revision', async () => {
+      await saveGame(makeGame({ id: 'queued' }))
+      const first = await createSyncRequest('server|user:1')
+      const submittedJourney = first.submitted.find(({ entity }) => entity === 'journey')
+      const [journey] = await getAllJourneys()
+      await saveJourney({ ...journey, status: 'playing', updatedAt: '2026-02-01T00:00:00.000Z' })
 
-      await replaceWithSyncSnapshot({
-        games: [
-          makeGame({
-            id: 'tunic',
-            developer: null,
-            publisher: null,
-            releaseYear: null,
-            priority: null,
-          }),
-        ],
-        logs: [],
-        earnedTrophies: [],
+      await applySyncResponse('server|user:1', first.submitted, {
+        cursor: 1,
+        acknowledged: {
+          games: first.request.changes.games.map(({ id }) => id),
+          journeys: first.request.changes.journeys.map(({ id }) => id),
+          logs: [],
+          earnedTrophies: [],
+        },
+        changes: first.request.changes,
+        totals: { games: 1, journeys: 1, logs: 0 },
+        syncedAt: '2026-02-01T00:00:00.000Z',
       })
 
-      const stored = (await getAllGames())[0]
-      expect(stored.developer).toBe('Andrew Shouldice')
-      expect(stored.publisher).toBe('Finji')
-      expect(stored.releaseYear).toBe(2022)
-      expect(stored.priority).toBe('high-interest')
+      const next = await createSyncRequest('server|user:1')
+      expect(submittedJourney).toBeDefined()
+      expect(next.request.full).toBe(false)
+      expect(next.request.cursor).toBe(1)
+      expect(next.request.changes.games).toEqual([])
+      expect(next.request.changes.journeys).toHaveLength(1)
+      expect(next.request.changes.journeys[0].status).toBe('playing')
     })
 
-    it('does NOT preserve other fields — coverUrl from the server response wins (or null wipes)', async () => {
-      // The carve-out is intentionally narrow: cover metadata follows the
-      // server. Locking this in so a well-meaning future widening doesn't silently
-      // grow into "preserve everything" (which would break sync correctness).
-      await saveGame(makeGame({ id: 'g1', coverUrl: 'https://local.test/cover.jpg' }))
-
-      await replaceWithSyncSnapshot({
-        games: [makeGame({ id: 'g1', coverUrl: null })],
-        logs: [],
-        earnedTrophies: [],
+    it('forces a full reconciliation when the authenticated server identity changes', async () => {
+      await saveGame(makeGame({ id: 'identity' }))
+      const first = await createSyncRequest('server|user:1')
+      await applySyncResponse('server|user:1', first.submitted, {
+        cursor: 4,
+        acknowledged: {
+          games: first.request.changes.games.map(({ id }) => id),
+          journeys: first.request.changes.journeys.map(({ id }) => id),
+          logs: [],
+          earnedTrophies: [],
+        },
+        changes: first.request.changes,
+        totals: { games: 1, journeys: 1, logs: 0 },
+        syncedAt: '2026-02-01T00:00:00.000Z',
       })
 
-      const stored = (await getAllGames())[0]
-      expect(stored.coverUrl).toBeNull()
+      const changedIdentity = await createSyncRequest('server|user:2')
+      expect(changedIdentity.request.full).toBe(true)
+      expect(changedIdentity.request.cursor).toBeNull()
+      expect(changedIdentity.request.changes.games).toHaveLength(1)
+      expect(changedIdentity.request.changes.journeys).toHaveLength(1)
     })
   })
 })

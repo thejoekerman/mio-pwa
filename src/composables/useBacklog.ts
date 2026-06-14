@@ -107,7 +107,6 @@ function createBacklogStore() {
   const autoSyncStarted = ref(false)
   const capabilityRefreshStarted = ref(false)
   let feedbackId = 0
-  const localChangeRevision = ref(0)
 
   const gameForm = reactive<GameFormState>({
     id: null,
@@ -203,17 +202,6 @@ function createBacklogStore() {
     return journey?.id === currentJourney?.id
       ? selectedGameDisplayStatus.value
       : journey?.status ?? null
-  })
-  const hasMultipleJourneys = computed(() => {
-    const journeyCountByGameId = new Map<string, number>()
-
-    for (const journey of journeys.value) {
-      if (journey.deletedAt === null) {
-        journeyCountByGameId.set(journey.gameId, (journeyCountByGameId.get(journey.gameId) ?? 0) + 1)
-      }
-    }
-
-    return [...journeyCountByGameId.values()].some((count) => count > 1)
   })
   const canUseServerReviewDraft = computed(() =>
     Boolean(
@@ -455,10 +443,6 @@ function createBacklogStore() {
     document.addEventListener('visibilitychange', updateBrowserOnline)
   }
 
-  function markLocalChange() {
-    localChangeRevision.value += 1
-  }
-
   function parseTags(value: string) {
     return dedupeTags(value.split(','))
   }
@@ -657,14 +641,12 @@ function createBacklogStore() {
   const { ensureSyncConfig, scheduleAutoSync, startAutoSync, testSyncConnection, refreshSyncCapabilities, syncNow } =
     createSyncHandlers({
       games,
-      hasMultipleJourneys,
       selectedGameId,
       gameForm,
       isSyncing,
       isTestingSyncConnection,
       autoSyncStarted,
       capabilityRefreshStarted,
-      localChangeRevision,
       settings,
       ensureLoaded,
       loadLogs,
@@ -685,7 +667,6 @@ function createBacklogStore() {
     earnedTrophies,
     trophyUnlockQueue,
     latestTrophyUnlockSource,
-    markLocalChange,
     scheduleAutoSync,
   })
   unlockEarnedTrophies = trophyHandlers.unlockEarnedTrophies
@@ -828,7 +809,6 @@ function createBacklogStore() {
       } else {
         await saveGame(game)
       }
-      markLocalChange()
       await loadGames()
       if (!existing && !games.value.some((candidate) => candidate.id === game.id)) {
         games.value.push(game)
@@ -852,7 +832,6 @@ function createBacklogStore() {
 
   async function removeGame(game: Game) {
     await deleteGame(game.id)
-    markLocalChange()
     removeGameInPlace(game.id)
     allLogs.value = allLogs.value.filter((log) => log.gameId !== game.id)
     totalPlayLogCount.value = allLogs.value.length
@@ -882,7 +861,6 @@ function createBacklogStore() {
       return false
     }
 
-    markLocalChange()
     selectedJourneyId.value = null
     await loadGames()
     await selectGame(journey.gameId)
@@ -918,7 +896,6 @@ function createBacklogStore() {
       updatedAt: now,
     }
     await saveJourney(updatedJourney)
-    markLocalChange()
 
     logDraft.value = ''
     await loadGames()
@@ -967,7 +944,6 @@ function createBacklogStore() {
       updatedAt: now,
     }
     await saveJourney(updatedJourney)
-    markLocalChange()
 
     await loadGames()
     await loadLogs(currentGame.id)
@@ -1011,7 +987,6 @@ function createBacklogStore() {
       }
 
       await saveJourney(updatedJourney)
-      markLocalChange()
       await loadGames()
       await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
@@ -1073,7 +1048,6 @@ function createBacklogStore() {
     }
 
     await saveJourney(updatedJourney)
-    markLocalChange()
     await loadGames()
     await selectJourney(updatedJourney.id)
     await unlockEarnedTrophies('user-action')
@@ -1107,7 +1081,6 @@ function createBacklogStore() {
     }
 
     await saveJourney(updatedJourney)
-    markLocalChange()
     await loadGames()
     await selectJourney(updatedJourney.id)
     setFeedback(
@@ -1146,7 +1119,6 @@ function createBacklogStore() {
       }
 
       await saveJourney(journey)
-      markLocalChange()
       await loadGames()
       await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
@@ -1214,7 +1186,6 @@ function createBacklogStore() {
       }
 
       await saveJourney(journey)
-      markLocalChange()
       await loadGames()
       await selectGame(game.id)
       await selectJourney(journey.id)
@@ -1262,7 +1233,6 @@ function createBacklogStore() {
       await saveGame(toPlainGame(game))
     }
 
-    markLocalChange()
     await ensureLoaded(true)
     await unlockEarnedTrophies('import')
     await loadLogs(selectedGameId.value)
@@ -1292,7 +1262,6 @@ function createBacklogStore() {
       }
 
       await saveJourney(updatedJourney)
-      markLocalChange()
       await loadGames()
       await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
@@ -1334,7 +1303,6 @@ function createBacklogStore() {
     }
 
     await saveJourney(updatedJourney)
-    markLocalChange()
     await loadGames()
     await selectJourney(updatedJourney.id)
     scheduleAutoSync()
@@ -1372,7 +1340,6 @@ function createBacklogStore() {
     }
 
     await resetDemoData()
-    markLocalChange()
     selectedGameId.value = null
     logDraft.value = ''
     reviewDraftPreview.value = ''

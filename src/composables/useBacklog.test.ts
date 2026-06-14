@@ -224,7 +224,7 @@ describe('useBacklog', () => {
       expect(store.feedback.value?.tone).toBe('error')
     })
 
-    it('persists a new game with sensible defaults and bumps localChangeRevision', async () => {
+    it('persists a new game with sensible defaults', async () => {
       const store = await loadBacklog()
       // Snapshot revision via syncNow → captured indirectly: assert the game is in
       // the in-memory list and was passed to saveGame.

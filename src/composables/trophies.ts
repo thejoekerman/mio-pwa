@@ -10,7 +10,6 @@ interface TrophyDeps {
   earnedTrophies: Ref<EarnedTrophy[]>
   trophyUnlockQueue: Ref<EarnedTrophy[]>
   latestTrophyUnlockSource: Ref<TrophyUnlockSource | null>
-  markLocalChange: () => void
   scheduleAutoSync: () => void
 }
 
@@ -22,7 +21,6 @@ export function createTrophyHandlers(deps: TrophyDeps) {
     earnedTrophies,
     trophyUnlockQueue,
     latestTrophyUnlockSource,
-    markLocalChange,
     scheduleAutoSync,
   } = deps
 
@@ -37,7 +35,6 @@ export function createTrophyHandlers(deps: TrophyDeps) {
     earnedTrophies.value = [...earnedTrophies.value, ...newlyEarned]
     trophyUnlockQueue.value = [...trophyUnlockQueue.value, ...newlyEarned]
     latestTrophyUnlockSource.value = source
-    markLocalChange()
     scheduleAutoSync()
 
     return newlyEarned
