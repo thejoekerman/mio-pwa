@@ -99,10 +99,11 @@ export async function requestReviewDraft(
   apiBaseUrl: string,
   syncToken: string,
   gameId: string,
+  journeyId: string | null,
   language: AppLanguage,
 ) {
   return performRequest<ReviewDraftResponse>(`/api/ai/review-draft/${encodeURIComponent(gameId)}`, apiBaseUrl, syncToken, {
     method: 'POST',
-    body: JSON.stringify({ language }),
+    body: JSON.stringify({ journeyId, language }),
   })
 }

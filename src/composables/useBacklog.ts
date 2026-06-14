@@ -1322,6 +1322,7 @@ function createBacklogStore() {
   const { generateReviewDraft, applyReviewDraft, discardReviewDraft } =
     createAiHandlers({
       selectedGame: selectedJourneyGame,
+      selectedJourneyId,
       logs,
       settings,
       serverReviewDraftReady: canUseServerReviewDraft,

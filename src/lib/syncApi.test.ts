@@ -91,11 +91,11 @@ describe('syncApi', () => {
     it('url-encodes the gameId in the review-draft path', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(200, { gameId: 'a/b c', draft: '' }))
 
-      await requestReviewDraft('https://example.test', 'token', 'a/b c', 'en')
+      await requestReviewDraft('https://example.test', 'token', 'a/b c', 'journey-1', 'en')
 
       const [url, init] = fetchMock.mock.calls[0]
       expect(url).toBe('https://example.test/api/ai/review-draft/a%2Fb%20c')
-      expect(init?.body).toBe(JSON.stringify({ language: 'en' }))
+      expect(init?.body).toBe(JSON.stringify({ journeyId: 'journey-1', language: 'en' }))
     })
   })
 

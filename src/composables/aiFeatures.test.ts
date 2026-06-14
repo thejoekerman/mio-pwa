@@ -82,6 +82,7 @@ function makeDeps(overrides: {
   return {
     deps: {
       selectedGame,
+      selectedJourneyId: ref('journey-1'),
       logs: ref<LogEntry[]>([]),
       settings,
       serverReviewDraftReady,
@@ -115,6 +116,7 @@ describe('createAiHandlers', () => {
         'https://example.test',
         'tok',
         'g1',
+        'journey-1',
         'en',
       )
       expect(deps.ensureSyncConfig).toHaveBeenCalled()

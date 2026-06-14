@@ -15,6 +15,7 @@ import type { FeedbackState, Game, LogEntry } from '../types'
 
 interface AiFeaturesDeps {
   selectedGame: ComputedRef<Game | null>
+  selectedJourneyId: Ref<string | null>
   logs: Ref<LogEntry[]>
   settings: AppSettingsState
   serverReviewDraftReady: ComputedRef<boolean>
@@ -30,6 +31,7 @@ interface AiFeaturesDeps {
 export function createAiHandlers(deps: AiFeaturesDeps) {
   const {
     selectedGame,
+    selectedJourneyId,
     logs,
     settings,
     serverReviewDraftReady,
@@ -60,6 +62,7 @@ export function createAiHandlers(deps: AiFeaturesDeps) {
           settings.syncApiBaseUrl,
           settings.syncToken,
           currentGame.id,
+          selectedJourneyId.value,
           settings.language,
         )
 
