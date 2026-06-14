@@ -103,7 +103,6 @@ function makeSettings(overrides: Partial<AppSettingsState> = {}): AppSettingsSta
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: false,
-    igdbMetadataAvailable: false,
     syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
@@ -157,7 +156,6 @@ function makeDeps(overrides: Partial<Record<string, unknown>> = {}) {
     resetForm: vi.fn(),
     setFeedback: vi.fn(),
     setAiReviewDraftAvailable: vi.fn(),
-    setIgdbMetadataAvailable: vi.fn(),
     setSyncApiVersion: vi.fn(),
     setLastSyncedAt: vi.fn(),
     setLastSyncError: vi.fn(),
@@ -175,7 +173,7 @@ describe('createSyncHandlers > syncNow', () => {
     replaceWithSyncSnapshotMock.mockResolvedValue(undefined)
     testSyncConnectionMock.mockResolvedValue({
       user: { id: 1, email: null, displayName: null },
-      capabilities: { reviewDraft: true, igdbMetadata: true },
+      capabilities: { reviewDraft: true },
     })
   })
 
@@ -330,7 +328,6 @@ describe('createSyncHandlers > syncNow', () => {
 
       expect(testSyncConnectionMock).toHaveBeenCalledTimes(1)
       expect(deps.setAiReviewDraftAvailable).toHaveBeenCalledWith(true)
-      expect(deps.setIgdbMetadataAvailable).toHaveBeenCalledWith(true)
       expect(deps.setSyncApiVersion).toHaveBeenCalledWith(1)
     })
 
@@ -357,29 +354,12 @@ describe('createSyncHandlers > syncNow', () => {
       expect(deps.setLastSyncError).toHaveBeenCalledWith(null)
     })
 
-    it('defaults igdbMetadata to true when the server omits the field', async () => {
-      // Older MioServer versions may not include `igdbMetadata` in capabilities;
-      // the client treats absence as enabled.
-      createSyncSnapshotMock.mockResolvedValue(makeSnapshot([]))
-      syncWithBackendMock.mockResolvedValue(makeResponse(makeSnapshot([])))
-      testSyncConnectionMock.mockResolvedValueOnce({
-        user: { id: 1, email: null, displayName: null },
-        capabilities: { reviewDraft: false },
-      })
-
-      const deps = makeDeps()
-      const { syncNow } = createSyncHandlers(deps)
-      await syncNow({ source: 'manual', silentSuccess: true })
-
-      expect(deps.setIgdbMetadataAvailable).toHaveBeenCalledWith(true)
-    })
-
     it('stores the sync API version reported by the server', async () => {
       const deps = makeDeps({ hasMultipleJourneys: ref(true) })
       testSyncConnectionMock.mockResolvedValueOnce({
         version: 2,
         user: { id: 1, email: null, displayName: null },
-        capabilities: { reviewDraft: true, igdbMetadata: true },
+        capabilities: { reviewDraft: true },
       })
       const { refreshSyncCapabilities } = createSyncHandlers(deps)
 

@@ -25,7 +25,6 @@ export interface AppSettingsState {
   lastBackupExportedAt: string | null
   backupReminderDismissedAt: string | null
   aiReviewDraftAvailable: boolean
-  igdbMetadataAvailable: boolean
   syncApiVersion: number
   aiLocalReviewDraftEnabled: boolean
   aiLocalReviewModel: string
@@ -125,10 +124,6 @@ function readStoredSettings(): Partial<AppSettingsState> {
     }
 
 
-    if (typeof parsed.igdbMetadataAvailable === 'boolean') {
-      nextState.igdbMetadataAvailable = parsed.igdbMetadataAvailable
-    }
-
     if (typeof parsed.syncApiVersion === 'number' && parsed.syncApiVersion >= 1) {
       nextState.syncApiVersion = Math.floor(parsed.syncApiVersion)
     }
@@ -162,7 +157,6 @@ function createSettingsStore() {
     lastBackupExportedAt: stored.lastBackupExportedAt ?? null,
     backupReminderDismissedAt: stored.backupReminderDismissedAt ?? null,
     aiReviewDraftAvailable: stored.aiReviewDraftAvailable ?? false,
-    igdbMetadataAvailable: stored.igdbMetadataAvailable ?? false,
     syncApiVersion: stored.syncApiVersion ?? 1,
     aiLocalReviewDraftEnabled: stored.aiLocalReviewDraftEnabled ?? false,
     aiLocalReviewModel: stored.aiLocalReviewModel ?? DEFAULT_LOCAL_REVIEW_MODEL,
@@ -190,7 +184,6 @@ function createSettingsStore() {
         value.lastBackupExportedAt = null
         value.backupReminderDismissedAt = null
         value.aiReviewDraftAvailable = false
-        value.igdbMetadataAvailable = false
         value.syncApiVersion = 1
       }
 
@@ -244,10 +237,6 @@ function createSettingsStore() {
     settings.aiReviewDraftAvailable = value
   }
 
-  function setIgdbMetadataAvailable(value: boolean) {
-    settings.igdbMetadataAvailable = value
-  }
-
   function setSyncApiVersion(value: number) {
     settings.syncApiVersion = Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1
   }
@@ -266,7 +255,6 @@ function createSettingsStore() {
     setAiLocalReviewDraftEnabled,
     setAiLocalReviewModel,
     setAiReviewDraftAvailable,
-    setIgdbMetadataAvailable,
     setSyncApiVersion,
     setAutoSyncEnabled,
     setBackupReminderDismissedAt,

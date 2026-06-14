@@ -64,7 +64,6 @@ function createBacklogStore() {
     settings,
     setAiReviewDraftAvailable,
     setBackupReminderDismissedAt,
-    setIgdbMetadataAvailable,
     setSyncApiVersion,
     setLastBackupExportedAt,
     setLastSyncError,
@@ -683,7 +682,6 @@ function createBacklogStore() {
       setFeedback,
       setAiReviewDraftAvailable,
       setSyncApiVersion,
-      setIgdbMetadataAvailable,
       setLastSyncedAt,
       setLastSyncError,
     })
@@ -741,19 +739,11 @@ function createBacklogStore() {
         return
       }
 
-      const igdbIdInput = gameForm.igdbId.trim()
-      const parsedIgdbId =
-        igdbIdInput === '' ? null : Number.parseInt(igdbIdInput.replace(/[^\d]/g, ''), 10)
-      const normalizedIgdbId =
-        parsedIgdbId === null || Number.isNaN(parsedIgdbId) || parsedIgdbId <= 0
-          ? null
-          : parsedIgdbId
       const manualDeveloper = gameForm.developer.trim()
       const manualPublisher = gameForm.publisher.trim()
       const manualCoverUrl = gameForm.coverUrl.trim()
-      const canEditIgdbMetadata = isSyncConfigured.value && settings.igdbMetadataAvailable
-      const nextIgdbId = canEditIgdbMetadata ? normalizedIgdbId : existingPlain?.igdbId ?? null
-      const shouldPreserveIgdbMetadata = isSyncConfigured.value && existingPlain?.igdbId === nextIgdbId
+      const nextIgdbId = existingPlain?.igdbId ?? null
+      const shouldPreserveIgdbMetadata = existingPlain?.igdbId === nextIgdbId
       const normalizedReleaseYear = normalizeReleaseYear(gameForm.releaseYear)
       const wikidataId = /^Q\d+$/.test(gameForm.wikidataId) ? gameForm.wikidataId : ''
       const existingExternalReferences = existingPlain?.externalReferences ?? []
@@ -786,10 +776,6 @@ function createBacklogStore() {
         gameForm.playTimeHours = String(normalizedPlayTime)
       }
 
-      if (canEditIgdbMetadata && normalizedIgdbId !== null) {
-        gameForm.igdbId = String(normalizedIgdbId)
-      }
-
       if (normalizedReleaseYear !== null) {
         gameForm.releaseYear = String(normalizedReleaseYear)
       }
@@ -809,7 +795,7 @@ function createBacklogStore() {
           (existingExternalReferences.find((reference) => reference.provider === 'wikidata')?.externalId ?? '')
             ? now
             : existingPlain?.metadataReviewedAt ?? null,
-        igdbId: isSyncConfigured.value ? nextIgdbId : null,
+        igdbId: nextIgdbId,
         igdbUrl: shouldPreserveIgdbMetadata ? existingPlain?.igdbUrl ?? null : null,
         igdbTtbHastilySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbHastilySeconds ?? null : null,
         igdbTtbNormallySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbNormallySeconds ?? null : null,

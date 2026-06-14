@@ -113,7 +113,6 @@ async function loadBacklog(opts: { seedGames?: Game[]; seedJourneys?: Journey[] 
     syncWithBackend: vi.fn(),
     testSyncConnection: vi.fn().mockRejectedValue(new Error('no network in tests')),
     requestReviewDraft: vi.fn(),
-    requestEnrich: vi.fn(),
   }))
 
   vi.doMock('../lib/localReviewModels', async (importOriginal) => {
@@ -323,33 +322,6 @@ describe('useBacklog', () => {
       const persisted = savedGames[0]
       expect(persisted.finishedAt).toBeNull()
       expect(persisted.pausedAt).toBeNull()
-    })
-
-    it('strips non-digit chars from the IGDB id and saves a positive integer', async () => {
-      const store = await loadBacklog()
-      // Pretend sync is configured + IGDB capability is available.
-      const { useSettings } = await import('./useSettings')
-      useSettings().settings.syncApiBaseUrl = 'https://server.test'
-      useSettings().settings.syncToken = 'tok'
-      useSettings().settings.igdbMetadataAvailable = true
-
-      store.gameForm.title = 'Outer Wilds'
-      store.gameForm.igdbId = 'id-1234abc'
-
-      await store.saveCurrentGame()
-
-      expect(savedGames[0].igdbId).toBe(1234)
-    })
-
-    it('drops the IGDB id when sync is not configured', async () => {
-      const store = await loadBacklog()
-      // Settings default: no sync URL/token.
-      store.gameForm.title = 'Outer Wilds'
-      store.gameForm.igdbId = '1234'
-
-      await store.saveCurrentGame()
-
-      expect(savedGames[0].igdbId).toBeNull()
     })
 
     it('updates only the selected Journey when editing Journey fields', async () => {

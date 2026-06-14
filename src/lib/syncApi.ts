@@ -106,12 +106,3 @@ export async function requestReviewDraft(
     body: JSON.stringify({ language }),
   })
 }
-
-export async function requestEnrich(
-  apiBaseUrl: string,
-  syncToken: string,
-) {
-  return performRequest<Record<string, never>>('/api/enrich', apiBaseUrl, syncToken, {
-    method: 'POST',
-  }, 300000) // 5 minutes — enrichment can take a while for large libraries
-}

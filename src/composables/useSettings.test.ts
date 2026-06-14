@@ -147,7 +147,6 @@ describe('useSettings', () => {
           autoSyncEnabled: true,
           backupReminderEnabled: true,
           aiReviewDraftAvailable: true,
-          igdbMetadataAvailable: true,
           syncApiVersion: 2,
         },
       })
@@ -158,7 +157,6 @@ describe('useSettings', () => {
       expect(settings.autoSyncEnabled).toBe(false)
       expect(settings.backupReminderEnabled).toBe(false)
       expect(settings.aiReviewDraftAvailable).toBe(false)
-      expect(settings.igdbMetadataAvailable).toBe(false)
       expect(settings.syncApiVersion).toBe(1)
     })
   })

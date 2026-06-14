@@ -63,7 +63,6 @@ function makeSettings(): AppSettingsState {
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: true,
-    igdbMetadataAvailable: false,
     syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',

@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  requestEnrich,
-  requestReviewDraft,
-  syncWithBackend,
-  testSyncConnection,
-} from './syncApi'
+import { requestReviewDraft, syncWithBackend, testSyncConnection } from './syncApi'
 import type { SyncSnapshot } from '../types'
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -143,28 +138,5 @@ describe('syncApi', () => {
       await expectation
     })
 
-    it('uses the longer 5-minute window for enrichment', async () => {
-      vi.useFakeTimers()
-      let abortedEarly = false
-
-      fetchMock.mockImplementation(
-        (_url, init) =>
-          new Promise((resolve, reject) => {
-            init?.signal?.addEventListener('abort', () => {
-              abortedEarly = true
-              reject(new DOMException('aborted', 'AbortError'))
-            })
-            // Resolve after 4 minutes — comfortably inside the 5-minute enrich timeout
-            // but well past the 18s default. A regression that drops the longer timeout
-            // would abort here.
-            setTimeout(() => resolve(jsonResponse(202, {})), 4 * 60_000)
-          }),
-      )
-
-      const pending = requestEnrich('https://example.test', 'token')
-      await vi.advanceTimersByTimeAsync(4 * 60_000 + 100)
-      await pending
-      expect(abortedEarly).toBe(false)
-    })
   })
 })

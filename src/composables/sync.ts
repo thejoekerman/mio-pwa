@@ -26,7 +26,6 @@ interface SyncDeps {
   resetForm: () => void
   setFeedback: (message: string, tone?: FeedbackState['tone']) => void
   setAiReviewDraftAvailable: (value: boolean) => void
-  setIgdbMetadataAvailable: (value: boolean) => void
   setSyncApiVersion: (value: number) => void
   setLastSyncedAt: (value: string | null) => void
   setLastSyncError: (value: string | null) => void
@@ -66,7 +65,6 @@ export function createSyncHandlers(deps: SyncDeps) {
     resetForm,
     setFeedback,
     setAiReviewDraftAvailable,
-    setIgdbMetadataAvailable,
     setSyncApiVersion,
     setLastSyncedAt,
     setLastSyncError,
@@ -257,7 +255,6 @@ export function createSyncHandlers(deps: SyncDeps) {
         }),
       )
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
       setSyncApiVersion(response.version ?? 1)
       setLastSyncError(null)
 
@@ -287,7 +284,6 @@ export function createSyncHandlers(deps: SyncDeps) {
       )
 
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
       setSyncApiVersion(response.version ?? 1)
     } catch {
       // Keep the latest known capability state when the startup refresh fails.
@@ -314,7 +310,6 @@ export function createSyncHandlers(deps: SyncDeps) {
             settings.syncToken,
           )
           setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
-          setIgdbMetadataAvailable(connection.capabilities.igdbMetadata ?? true)
           setSyncApiVersion(connection.version ?? 1)
         } catch {
           // Keep the latest known capability state when the refresh call fails.

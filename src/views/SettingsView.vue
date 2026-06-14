@@ -8,7 +8,6 @@ import { APP_LANGUAGES, APP_THEMES, type BackupData, type BackupImportMode } fro
 import { isDemoMode } from '../lib/appMode'
 import { downloadBackupPayload, downloadTextFile } from '../lib/backupDownload'
 import type { LibraryCsvImportPlan } from '../lib/libraryCsv'
-import { requestEnrich } from '../lib/syncApi'
 import {
   detectWebGpuSupport,
   getModelsForLanguage,
@@ -54,9 +53,6 @@ const csvImportPlan = ref<LibraryCsvImportPlan | null>(null)
 const CSV_PREVIEW_MESSAGE_LIMIT = 6
 const syncNotice = ref('')
 const syncNoticeTone = ref<'success' | 'error'>('success')
-const isEnriching = ref(false)
-const enrichNotice = ref('')
-const enrichNoticeTone = ref<'success' | 'error'>('success')
 const languageOptions = computed(() =>
   APP_LANGUAGES.map((language) => ({
     title: t(`settings.language.${language}`),
@@ -479,24 +475,6 @@ async function handleTestConnection() {
   }
 }
 
-async function handleEnrich() {
-  isEnriching.value = true
-  enrichNotice.value = ''
-
-  try {
-    await requestEnrich(settings.syncApiBaseUrl, settings.syncToken)
-    enrichNoticeTone.value = 'success'
-    enrichNotice.value = t('settings.enrichSuccessNotice')
-    await syncNow({ silentSuccess: true })
-  } catch (error) {
-    enrichNoticeTone.value = 'error'
-    enrichNotice.value =
-      error instanceof Error ? error.message : t('settings.enrichFailed')
-  } finally {
-    isEnriching.value = false
-  }
-}
-
 async function handleSyncNow() {
   try {
     const result = await syncNow()
@@ -759,39 +737,6 @@ async function handleSyncNow() {
         type="info"
       >
         {{ t('settings.localAiUnsupported') }}
-      </VAlert>
-    </section>
-
-    <section v-if="!isDemoMode && isSyncConfigured" class="panel settings-section">
-      <div class="section-heading">
-        <div>
-          <p class="section-kicker">{{ t('settings.enrichKicker') }}</p>
-          <h2>{{ t('settings.enrichTitle') }}</h2>
-          <p class="section-helper">{{ t('settings.enrichHelper') }}</p>
-        </div>
-      </div>
-
-      <div class="settings-actions">
-        <VBtn
-          class="miolog-primary-action"
-          type="button"
-          color="primary"
-          :disabled="isEnriching || isSyncing"
-          @click="handleEnrich"
-        >
-          {{ isEnriching ? t('settings.enrichingNow') : t('settings.enrichNow') }}
-        </VBtn>
-      </div>
-
-      <VAlert
-        v-if="enrichNotice"
-        class="settings-notice"
-        density="comfortable"
-        variant="tonal"
-        :type="enrichNoticeTone === 'success' ? 'success' : 'error'"
-        aria-live="polite"
-      >
-        {{ enrichNotice }}
       </VAlert>
     </section>
 

@@ -30,7 +30,6 @@ function makeSettings(language: 'en' | 'de' = 'en'): AppSettingsState {
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: false,
-    igdbMetadataAvailable: false,
     syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',

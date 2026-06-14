@@ -83,7 +83,6 @@ function makeSettings(): AppSettingsState {
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: false,
-    igdbMetadataAvailable: false,
     syncApiVersion: 1,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
@@ -136,7 +135,6 @@ function makeDeps() {
     resetForm: vi.fn(),
     setFeedback: vi.fn(),
     setAiReviewDraftAvailable: vi.fn(),
-    setIgdbMetadataAvailable: vi.fn(),
     setSyncApiVersion: vi.fn(),
     setLastSyncedAt: vi.fn(),
     setLastSyncError: vi.fn(),
@@ -149,7 +147,7 @@ describe('sync integration (real Dexie via fake-indexeddb)', () => {
     testSyncConnectionMock.mockReset()
     testSyncConnectionMock.mockResolvedValue({
       user: { id: 1, email: null, displayName: null },
-      capabilities: { reviewDraft: true, igdbMetadata: true },
+      capabilities: { reviewDraft: true },
     })
 
     // Reset the real Dexie database between tests.

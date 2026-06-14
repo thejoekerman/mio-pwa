@@ -243,7 +243,6 @@ export interface SyncUser {
 
 export interface SyncCapabilities {
   reviewDraft: boolean
-  igdbMetadata?: boolean
 }
 
 export interface SyncConnectionResponse {

@@ -8,7 +8,7 @@ the small notes that make a playthrough feel personal.
 
 This repository is the canonical public source for the MioLog PWA frontend. The
 app works fully offline with browser-local IndexedDB storage. A compatible [MioServer](https://github.com/thejoekerman/mio-server) 
-backend is optional and adds sync, IGDB enrichment, and server-backed
+backend is optional and adds sync and server-backed
 review drafting.
 
 ## Local Development
