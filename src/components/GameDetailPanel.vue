@@ -3,20 +3,24 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameCover from './GameCover.vue'
 import { useI18n } from '../i18n'
+import { useSettings } from '../composables/useSettings'
 import {
   createGameJournalFileName,
   createGameJournalMarkdown,
   downloadMarkdownFile,
 } from '../lib/journalExport'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
-import { getTimeToBeatHours } from '../lib/timeToBeat'
-import { GAME_STATUSES, type Game, type GameStatus, type LogEntry } from '../types'
+import { getLifetimePlayTime, groupJourneyLogs } from '../lib/gameJourneyHistory'
+import { createPlayLogShareText } from '../lib/playLogShare'
+import { GAME_STATUSES, type Game, type GameDisplayStatus, type GameStatus, type Journey, type JourneyLogEntry, type LogEntry } from '../types'
 
 const { ownershipLabel, statusLabel, t } = useI18n()
+const { settings } = useSettings()
 const router = useRouter()
 
 const props = defineProps<{
-  addPlayTime: (game: Game, hours: number) => void | Promise<void>
+  addPlayTime: (hours: number) => void | Promise<void>
+  canStartReplay: boolean
   canUseReviewDraft: boolean
   formatDate: (value: string) => string
   isDraftingReview: boolean
@@ -25,7 +29,12 @@ const props = defineProps<{
   logs: LogEntry[]
   reviewDraftPreview: string
   selectedGame: Game | null
-  changeGameStatus: (game: Game, status: GameStatus) => void | Promise<void>
+  selectedJourney: Journey | null
+  selectedJourneyId: string | null
+  journeys: Journey[]
+  journeyLogs: JourneyLogEntry[]
+  selectedGameDisplayStatus: GameDisplayStatus | null
+  changeGameStatus: (status: GameStatus) => void | Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -37,13 +46,20 @@ const emit = defineEmits<{
   journalCopied: []
   journalCopyFailed: []
   journalExported: []
+  playLogShared: []
+  playLogCopied: []
+  playLogShareFailed: []
   saveLog: []
   saveLogEdit: [logId: string, content: string]
+  selectJourney: [journeyId: string]
+  deleteJourney: []
+  startReplay: []
   updateLogDraft: [value: string]
 }>()
 
 const addTimeInput = ref('')
 const addTimeMenuOpen = ref(false)
+const showAllJourneyLogs = ref(false)
 const parsedAddTime = computed(() => {
   const n = Number.parseFloat(addTimeInput.value.replace(',', '.'))
   return Number.isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : null
@@ -52,12 +68,13 @@ const canAddTime = computed(() => parsedAddTime.value !== null)
 
 async function handleAddTime() {
   if (!props.selectedGame || parsedAddTime.value === null) return
-  await props.addPlayTime(props.selectedGame, parsedAddTime.value)
+  await props.addPlayTime(parsedAddTime.value)
   addTimeInput.value = ''
   addTimeMenuOpen.value = false
 }
 
 const editingLogId = ref<string | null>(null)
+const sharingLog = ref<{ log: Pick<LogEntry, 'content'>; journey: Journey } | null>(null)
 const editingLogContent = ref('')
 const trimmedEditingLogContent = computed(() => editingLogContent.value.trim())
 const editingLog = computed(() => props.logs.find((log) => log.id === editingLogId.value) ?? null)
@@ -68,6 +85,30 @@ const canSaveEditingLog = computed(
 )
 const canShareJournal = computed(() =>
   Boolean(props.selectedGame && (props.logs.length > 0 || props.selectedGame.review.trim())),
+)
+const canNativeShare = computed(() => typeof navigator.share === 'function')
+const playLogShareText = computed(() => {
+  const target = sharingLog.value
+
+  if (!target || !props.selectedGame) {
+    return ''
+  }
+
+  return createPlayLogShareText({
+    game: { ...props.selectedGame, platform: target.journey.platform, status: target.journey.status },
+    hashtags: settings.playLogShareHashtags,
+    log: target.log,
+    status: statusLabel(target.journey.status),
+    template: settings.playLogShareTemplate,
+  })
+})
+const lifetimePlayTime = computed(() => getLifetimePlayTime(props.journeys))
+const journeyLogGroups = computed(() =>
+  groupJourneyLogs(props.journeys, props.journeyLogs)
+    .map((group) => ({
+      ...group,
+      title: journeyTitle(props.journeys.findIndex((journey) => journey.id === group.journey.id)),
+    })),
 )
 const journalMarkdown = computed(() => {
   if (!props.selectedGame) {
@@ -108,9 +149,9 @@ const detailMetadata = computed(() => {
     game.ownershipType ? ownershipLabel(game.ownershipType) : null,
     game.rating !== null ? `${game.rating}/10` : null,
     game.playTimeHours !== null ? `${game.playTimeHours} h` : null,
+    lifetimePlayTime.value !== null ? t('detail.lifetimePlayTime', { hours: lifetimePlayTime.value }) : null,
     game.releaseYear ? String(game.releaseYear) : null,
-    formatTimeToBeat(game) ? `${formatTimeToBeat(game)} TTB` : null,
-    igdbCreditLine(game),
+    creditLine(game),
     ...game.tags,
   ].filter((item): item is string => Boolean(item))
 })
@@ -171,6 +212,43 @@ function saveEditingLog() {
   cancelEditingLog()
 }
 
+function openLogShare(log: Pick<LogEntry, 'content'>, journey: Journey | null) {
+  if (journey) {
+    sharingLog.value = { log, journey }
+  }
+}
+
+async function sharePlayLog() {
+  if (!canNativeShare.value || !playLogShareText.value) {
+    return
+  }
+
+  try {
+    await navigator.share({ text: playLogShareText.value })
+    sharingLog.value = null
+    emit('playLogShared')
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      emit('playLogShareFailed')
+    }
+  }
+}
+
+async function copyPlayLogShareText() {
+  if (!navigator.clipboard || !playLogShareText.value) {
+    emit('playLogShareFailed')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(playLogShareText.value)
+    sharingLog.value = null
+    emit('playLogCopied')
+  } catch {
+    emit('playLogShareFailed')
+  }
+}
+
 async function copyReview() {
   const review = props.selectedGame?.review?.trim()
 
@@ -210,34 +288,51 @@ function exportJournal() {
   emit('journalExported')
 }
 
-function wasEdited(log: LogEntry) {
+function wasEdited(log: Pick<LogEntry, 'createdAt' | 'updatedAt'>) {
   return new Date(log.updatedAt).getTime() > new Date(log.createdAt).getTime()
 }
 
-function formatTimeToBeat(game: Game) {
-  const hours = getTimeToBeatHours(game)
-
-  return hours === null ? null : `~${hours} h`
+async function handleStatusChange(status: GameStatus) {
+  await props.changeGameStatus(status)
 }
 
-async function handleStatusChange(game: Game, status: GameStatus) {
-  await props.changeGameStatus(game, status)
+function journeyTitle(index: number) {
+  return t('detail.journeyNumber', { number: props.journeys.length - index })
 }
 
-function igdbCreditLine(game: Game) {
+function selectedJourneyTitle() {
+  const index = props.journeys.findIndex((journey) => journey.id === props.selectedJourneyId)
+
+  return index === -1 ? t('detail.journeyNumber', { number: 1 }) : journeyTitle(index)
+}
+
+function journeyDate(journey: Journey) {
+  return journey.finishedAt ?? journey.startedAt ?? journey.createdAt.slice(0, 10)
+}
+
+function journeySubtitle(journey: Journey) {
+  return `${statusLabel(journey.status)} · ${journeyDate(journey)} · ${journey.platform || t('detail.anywhere')}`
+}
+
+function selectHistoryJourney(journeyId: string) {
+  showAllJourneyLogs.value = false
+  emit('selectJourney', journeyId)
+}
+
+function creditLine(game: Game) {
   const developers = getDisplayDeveloper(game)
   const publishers = getDisplayPublisher(game)
 
   if (developers && publishers) {
-    return t('detail.igdbCreditsFull', { developers, publishers })
+    return t('detail.creditsFull', { developers, publishers })
   }
 
   if (developers) {
-    return t('detail.igdbCreditsDevelopers', { developers })
+    return t('detail.creditsDevelopers', { developers })
   }
 
   if (publishers) {
-    return t('detail.igdbCreditsPublishers', { publishers })
+    return t('detail.creditsPublishers', { publishers })
   }
 
   return null
@@ -284,6 +379,32 @@ function igdbCreditLine(game: Game) {
         <div class="detail-hero-copy">
           <h2>{{ selectedGame.title }}</h2>
           <div class="detail-hero-control-row">
+            <VMenu v-if="journeys.length > 1" location="bottom start">
+              <template #activator="{ props: activatorProps }">
+                <button
+                  v-bind="activatorProps"
+                  type="button"
+                  class="detail-journey-select"
+                >
+                  {{ selectedJourneyTitle() }}
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="m8 10 4 4 4-4" />
+                  </svg>
+                </button>
+              </template>
+
+              <VList class="detail-journey-list" density="compact">
+                <VListItem
+                  v-for="(journey, index) in journeys"
+                  :key="journey.id"
+                  :active="journey.id === selectedJourneyId"
+                  :title="journeyTitle(index)"
+                  :subtitle="journeySubtitle(journey)"
+                  @click="emit('selectJourney', journey.id)"
+                />
+              </VList>
+            </VMenu>
+
             <VMenu location="bottom start">
               <template #activator="{ props: activatorProps }">
                 <button
@@ -291,7 +412,7 @@ function igdbCreditLine(game: Game) {
                   type="button"
                   class="status-pill detail-status-pill"
                 >
-                  {{ statusLabel(selectedGame.status) }}
+                  {{ statusLabel(selectedGameDisplayStatus ?? selectedGame.status) }}
                 </button>
               </template>
 
@@ -299,12 +420,40 @@ function igdbCreditLine(game: Game) {
                 <VListItem
                   v-for="status in GAME_STATUSES"
                   :key="status"
-                  :active="selectedGame.status === status"
+                  :active="selectedJourney?.status === status"
                   :title="statusLabel(status)"
-                  @click="handleStatusChange(selectedGame, status)"
+                  @click="handleStatusChange(status)"
                 />
               </VList>
             </VMenu>
+
+            <VBtn
+              v-if="selectedJourney?.status === 'finished'"
+              type="button"
+              variant="outlined"
+              color="primary"
+              :disabled="!canStartReplay"
+              :title="canStartReplay ? t('detail.startReplay') : t('detail.replaySyncBlocked')"
+              @click="emit('startReplay')"
+            >
+              {{ t('detail.startReplay') }}
+            </VBtn>
+
+            <button
+              v-if="journeys.length > 1"
+              type="button"
+              class="icon-button detail-delete-journey"
+              :aria-label="t('detail.deleteJourney')"
+              :title="t('detail.deleteJourney')"
+              @click="emit('deleteJourney')"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v5M14 11v5" />
+              </svg>
+            </button>
 
             <VMenu v-model="addTimeMenuOpen" location="bottom center" :close-on-content-click="false" @update:model-value="!$event && (addTimeInput = '')">
               <template #activator="{ props: activatorProps }">
@@ -352,15 +501,6 @@ function igdbCreditLine(game: Game) {
               </template>
             </div>
           </div>
-          <a
-            v-if="selectedGame.igdbUrl"
-            class="detail-meta-link"
-            :href="selectedGame.igdbUrl"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {{ t('detail.openIgdb') }}
-          </a>
         </div>
       </div>
 
@@ -432,9 +572,18 @@ function igdbCreditLine(game: Game) {
         <div class="section-heading compact detail-log-header">
           <div class="detail-log-title">
             <p class="section-kicker">{{ t('detail.sessionNotes') }}</p>
-            <span class="detail-log-count">{{ logs.length }}</span>
+            <span class="detail-log-count">{{ showAllJourneyLogs ? journeyLogs.length : logs.length }}</span>
           </div>
           <div class="detail-log-actions">
+            <button
+              v-if="journeys.length > 1"
+              class="detail-history-toggle"
+              type="button"
+              :class="{ active: showAllJourneyLogs }"
+              @click="showAllJourneyLogs = !showAllJourneyLogs"
+            >
+              {{ showAllJourneyLogs ? t('detail.selectedJourneyLogs') : t('detail.allJourneyLogs') }}
+            </button>
             <button
               class="icon-button"
               type="button"
@@ -465,7 +614,7 @@ function igdbCreditLine(game: Game) {
           </div>
         </div>
 
-        <form class="log-form" @submit.prevent="emit('saveLog')">
+        <form v-if="!showAllJourneyLogs" class="log-form" @submit.prevent="emit('saveLog')">
           <VTextarea
             class="form-control"
             :model-value="logDraft"
@@ -480,7 +629,48 @@ function igdbCreditLine(game: Game) {
           </VBtn>
         </form>
 
-        <div v-if="logs.length > 0" class="log-list">
+        <div v-if="showAllJourneyLogs && journeyLogGroups.length > 0" class="journey-log-history">
+          <section v-for="group in journeyLogGroups" :key="group.journey.id" class="journey-log-group">
+            <button
+              type="button"
+              class="journey-log-group-heading"
+              @click="selectHistoryJourney(group.journey.id)"
+            >
+              <span>
+                <strong>{{ group.title }}</strong>
+                <small>{{ journeySubtitle(group.journey) }}</small>
+              </span>
+              <span class="detail-log-count">{{ group.logs.length }}</span>
+            </button>
+            <article v-for="log in group.logs" :key="log.id" class="log-entry compact">
+              <div class="log-entry-header">
+                <div class="log-entry-meta">
+                  <time>{{ formatDate(log.createdAt) }}</time>
+                  <span v-if="wasEdited(log)" class="log-entry-edited">
+                    {{ t('detail.editedLog', { date: formatDate(log.updatedAt) }) }}
+                  </span>
+                </div>
+                <button
+                  class="icon-button log-edit-button"
+                  type="button"
+                  :aria-label="t('detail.shareLog')"
+                  :title="t('detail.shareLog')"
+                  @click="openLogShare(log, group.journey)"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                  </svg>
+                </button>
+              </div>
+              <p>{{ log.content }}</p>
+            </article>
+          </section>
+        </div>
+
+        <div v-else-if="!showAllJourneyLogs && logs.length > 0" class="log-list">
           <article v-for="log in logs" :key="log.id" class="log-entry">
             <div class="log-entry-header">
               <div class="log-entry-meta">
@@ -489,19 +679,34 @@ function igdbCreditLine(game: Game) {
                   {{ t('detail.editedLog', { date: formatDate(log.updatedAt) }) }}
                 </span>
               </div>
-              <button
-                v-if="editingLogId !== log.id"
-                class="icon-button log-edit-button"
-                type="button"
-                :aria-label="t('detail.editLog')"
-                :title="t('detail.editLog')"
-                @click="startEditingLog(log)"
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                </svg>
-              </button>
+              <div v-if="editingLogId !== log.id" class="log-entry-buttons">
+                <button
+                  class="icon-button log-edit-button"
+                  type="button"
+                  :aria-label="t('detail.shareLog')"
+                  :title="t('detail.shareLog')"
+                  @click="openLogShare(log, selectedJourney)"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                  </svg>
+                </button>
+                <button
+                  class="icon-button log-edit-button"
+                  type="button"
+                  :aria-label="t('detail.editLog')"
+                  :title="t('detail.editLog')"
+                  @click="startEditingLog(log)"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <form v-if="editingLogId === log.id" class="log-edit-form" @submit.prevent="saveEditingLog">
@@ -549,5 +754,39 @@ function igdbCreditLine(game: Game) {
       <h3>{{ t('detail.selectGame') }}</h3>
       <p>{{ t('detail.selectGameBody') }}</p>
     </div>
+
+    <VDialog :model-value="Boolean(sharingLog)" class="confirm-dialog" max-width="560" @update:model-value="sharingLog = null">
+      <VCard>
+        <VCardTitle>{{ t('detail.shareLogTitle') }}</VCardTitle>
+        <VCardText>
+          <div class="share-preview">
+            <div class="share-preview-heading share-preview-heading--count">
+              <span>{{ t('detail.shareLogCharacterCount', { count: playLogShareText.length }) }}</span>
+            </div>
+            <p>{{ playLogShareText }}</p>
+          </div>
+          <p v-if="!canNativeShare" class="share-native-unavailable">
+            {{ t('detail.shareLogUnavailable') }}
+          </p>
+        </VCardText>
+        <VCardActions>
+          <VBtn type="button" variant="text" color="primary" @click="sharingLog = null">
+            {{ t('detail.shareLogCancel') }}
+          </VBtn>
+          <VBtn type="button" variant="outlined" color="primary" @click="copyPlayLogShareText">
+            {{ t('detail.shareLogCopy') }}
+          </VBtn>
+          <VBtn
+            class="miolog-primary-action"
+            type="button"
+            color="primary"
+            :disabled="!canNativeShare"
+            @click="sharePlayLog"
+          >
+            {{ t('detail.shareLogNative') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </section>
 </template>

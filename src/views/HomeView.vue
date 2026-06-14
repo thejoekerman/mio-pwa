@@ -15,7 +15,6 @@ import {
   type BacklogRecommendation,
   type RecommendationReason,
 } from '../lib/backlogRecommendation'
-import { getTimeToBeatHours } from '../lib/timeToBeat'
 import type { Game, GameStatus } from '../types'
 
 const {
@@ -25,8 +24,10 @@ const {
   earnedTrophyViews,
   exportBackup,
   finishedYearOptions,
+  finishedJourneyEntries,
   formatDate,
   games,
+  journeys,
   logDraft,
   logs,
   recentLogs,
@@ -36,7 +37,7 @@ const {
   shouldShowBackupReminder,
   snoozePausedGame,
   trophyViews,
-  updateGameStatus,
+  updateCurrentJourneyStatus,
 } = useBacklog()
 const { ownershipLabel, t } = useI18n()
 const router = useRouter()
@@ -142,12 +143,6 @@ const featuredGameMetadata = computed(() => {
 
   if (game.playTimeHours !== null) {
     metadata.push(`${game.playTimeHours} h`)
-  }
-
-  const timeToBeat = formatTimeToBeat(game)
-
-  if (timeToBeat) {
-    metadata.push(timeToBeat)
   }
 
   return metadata
@@ -267,18 +262,12 @@ async function openPlayingCard(game: Game, event: PointerEvent | MouseEvent) {
   await router.push({ name: 'game', params: { gameId: game.id } })
 }
 
-function formatTimeToBeat(game: Game) {
-  const hours = getTimeToBeatHours(game)
-
-  return hours === null ? null : `~${hours} h`
-}
-
 function goToHomeGame(index: number) {
   emblaApi.value?.scrollTo(index)
 }
 
 function refreshBacklogRecommendations() {
-  const recommendations = recommendBacklogGames(games.value, {
+  const recommendations = recommendBacklogGames(games.value, journeys.value, {
     limit: 2,
     recentGameIds: recentRecommendationIds.value,
   })
@@ -291,7 +280,7 @@ function refreshBacklogRecommendations() {
 }
 
 function formatRecommendationMeta(game: Game) {
-  return [game.platform || t('home.platformFree'), formatTimeToBeat(game)].filter(Boolean).join(' · ')
+  return game.platform || t('home.platformFree')
 }
 
 function formatRecommendationBody(recommendation: BacklogRecommendation) {
@@ -307,14 +296,6 @@ function formatRecommendationReason(reason: RecommendationReason) {
 
   if (reason.kind === 'taste') {
     return t('home.recommendationReasonTaste', { tag: reason.tag })
-  }
-
-  if (reason.kind === 'timeToBeat') {
-    return t('home.recommendationReasonTimeToBeat', { hours: reason.hours })
-  }
-
-  if (reason.kind === 'bigAdventure') {
-    return t('home.recommendationReasonBigAdventure', { hours: reason.hours })
   }
 
   if (reason.kind === 'longWaiting') {
@@ -395,20 +376,16 @@ watch(finishedYearOptions, (options) => {
   }
 })
 
-const wrappedYearGames = computed(() =>
-  games.value.filter(
-    (g) =>
-      g.status === 'finished' &&
-      g.deletedAt === null &&
-      typeof g.finishedAt === 'string' &&
-      g.finishedAt.startsWith(wrappedYear.value),
+const wrappedYearJourneys = computed(() =>
+  finishedJourneyEntries.value.filter(
+    ({ journey }) => journey.finishedAt?.startsWith(wrappedYear.value),
   ),
 )
 
 const wrappedPreviewText = computed(() => {
-  const count = wrappedYearGames.value.length
+  const count = wrappedYearJourneys.value.length
   if (count === 0) return null
-  const hours = wrappedYearGames.value.reduce((sum, g) => sum + (g.playTimeHours ?? 0), 0)
+  const hours = wrappedYearJourneys.value.reduce((sum, { journey }) => sum + (journey.playTimeHours ?? 0), 0)
   return hours > 0
     ? t('wrapped.homePanelPreview', { count, hours })
     : t('wrapped.homePanelPreviewNoHours', { count })
@@ -596,7 +573,7 @@ onBeforeUnmount(() => {
                     type="button"
                     :aria-label="t('home.resumePausedGame')"
                     :title="t('home.resumePausedGame')"
-                    @click="updateGameStatus(game, 'playing')"
+                    @click="updateCurrentJourneyStatus(game, 'playing')"
                   >
                     <svg aria-hidden="true" viewBox="0 0 24 24">
                       <polygon points="8 5 19 12 8 19 8 5" />

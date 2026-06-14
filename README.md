@@ -2,14 +2,31 @@
 
 <img src="docs/assets/miolog-chibi.png" alt="MioLog" width="128" />
 
-[MioLog](https://app.miolog.net/) is a local-first games backlog and play-log PWA. It helps you track what
-you want to play, what you are playing, what you paused, what you finished, and
-the small notes that make a playthrough feel personal.
+[MioLog](https://app.miolog.net/) is a local-first games backlog and play-log
+PWA. It helps you track what you want to play, the journeys you take through
+each game, and the small notes that make a playthrough feel personal.
 
 This repository is the canonical public source for the MioLog PWA frontend. The
-app works fully offline with browser-local IndexedDB storage. A compatible [MioServer](https://github.com/thejoekerman/mio-server) 
-backend is optional and adds sync, IGDB enrichment, and server-backed
-review drafting.
+app works fully offline with browser-local IndexedDB storage. A compatible
+[MioServer](https://github.com/thejoekerman/mio-server) backend is optional and
+adds sync and server-backed review drafting.
+
+## What MioLog Tracks
+
+- A **Game** is the stable library entry: title, artwork, tags, and factual
+  metadata.
+- A **Journey** is one playthrough or intention to play, with its own status,
+  platform, rating, review, play time, and play logs.
+- Starting a replay creates a new Journey. Previous completions and their logs
+  remain intact.
+
+The Metadata Assistant can find game details through Wikidata and suggest
+artwork from Wikipedia. Suggestions are always reviewed by the user before
+they change a Game.
+
+JSON backups preserve the complete library, including Journey history. CSV
+import and export are intentionally simpler tools for adding or bulk-editing
+games and their current Journey.
 
 ## Local Development
 
@@ -62,9 +79,12 @@ container health checks.
 
 ## Backend
 
-[MioServer](https://github.com/thejoekerman/mio-server) is optional. If you run a compatible backend, configure the sync API
-base URL and token in the app Settings screen. For local development, the common
-backend URL is:
+[MioServer](https://github.com/thejoekerman/mio-server) is optional. If you run
+a compatible backend, configure the sync API base URL and token in the app
+Settings screen. MioLog's current sync contract uses canonical Games, Journeys,
+play logs, and earned trophies with incremental change exchange.
+
+For local development, the common backend URL is:
 
 ```text
 http://localhost:8000

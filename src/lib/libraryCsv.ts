@@ -89,10 +89,8 @@ export function parseLibraryCsvImport(
 
   const header = parsedRows[0].map((column) => column.trim())
   const headerIndexes = new Map(header.map((column, index) => [column, index]))
-  const missingColumns = LIBRARY_CSV_COLUMNS.filter((column) => !headerIndexes.has(column))
-
-  if (missingColumns.length > 0) {
-    plan.errors.push(`Missing required columns: ${missingColumns.join(', ')}.`)
+  if (!headerIndexes.has('title')) {
+    plan.errors.push('Missing required column: title.')
     return plan
   }
 
@@ -115,6 +113,7 @@ export function parseLibraryCsvImport(
     const line = index + 2
     const rowErrors: string[] = []
     const rowWarnings: string[] = []
+    const hasColumn = (column: (typeof LIBRARY_CSV_COLUMNS)[number]) => headerIndexes.has(column)
     const value = (column: (typeof LIBRARY_CSV_COLUMNS)[number]) =>
       csvRow[headerIndexes.get(column) ?? -1]?.trim() ?? ''
 
@@ -140,17 +139,28 @@ export function parseLibraryCsvImport(
       )
     }
 
-    const statusResult = parseStatus(value('status'), line, rowErrors)
+    const statusResult = parseStatus(
+      hasColumn('status') ? value('status') : existingGame?.status ?? '',
+      line,
+      rowErrors,
+    )
     const status = statusResult.status
-    const rating = parseRating(value('rating'), line, rowErrors)
-    const playTimeHours = parsePlayTime(value('playTimeHours'), line, rowErrors)
-    const finishedDate = statusResult.valid
+    const rating = hasColumn('rating')
+      ? parseRating(value('rating'), line, rowErrors)
+      : existingGame?.rating ?? null
+    const playTimeHours = hasColumn('playTimeHours')
+      ? parsePlayTime(value('playTimeHours'), line, rowErrors)
+      : existingGame?.playTimeHours ?? null
+    const finishedDate = statusResult.valid && hasColumn('finishedDate')
       ? parseFinishedDate(value('finishedDate'), status, line, rowErrors, rowWarnings)
-      : null
-    const coverUrl = parseCoverUrl(value('coverUrl'), line, rowErrors)
+      : existingGame?.finishedAt ?? null
+    const coverUrl = hasColumn('coverUrl')
+      ? parseCoverUrl(value('coverUrl'), line, rowErrors)
+      : existingGame?.coverUrl ?? null
+    const importedPlatform = hasColumn('platform') ? platform : existingGame?.platform ?? ''
     const normalizedRating = canRateStatus(status) ? rating : null
 
-    if (statusResult.valid && !canRateStatus(status) && rating !== null) {
+    if (statusResult.valid && hasColumn('rating') && !canRateStatus(status) && rating !== null) {
       rowWarnings.push(`Line ${line}: rating is only imported for finished or abandoned games.`)
     }
 
@@ -175,7 +185,7 @@ export function parseLibraryCsvImport(
       id: mioId || options.createId(),
       title,
       status,
-      platform,
+      platform: importedPlatform,
       rating: normalizedRating,
       playTimeHours,
       finishedDate,
@@ -346,17 +356,6 @@ function buildImportedGame({
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
-    igdbUrl: null,
-    igdbTtbHastilySeconds: null,
-    igdbTtbNormallySeconds: null,
-    igdbTtbCompletelySeconds: null,
-    igdbTtbCount: null,
-    igdbTtbUpdatedAt: null,
-    igdbDevelopers: null,
-    igdbPublishers: null,
-    igdbThemes: null,
-    igdbGameModes: null,
     releaseYear: null,
     priority: null,
     developer: null,
@@ -399,8 +398,10 @@ function parseCsvRows(rawCsv: string) {
     skipEmptyLines: 'greedy',
   })
 
-  if (result.errors.length > 0) {
-    throw new Error(result.errors[0]?.message ?? 'CSV could not be parsed.')
+  const fatalError = result.errors.find((error) => error.code !== 'UndetectableDelimiter')
+
+  if (fatalError) {
+    throw new Error(fatalError.message || 'CSV could not be parsed.')
   }
 
   return result.data

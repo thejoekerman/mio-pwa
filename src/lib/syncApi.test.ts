@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  requestEnrich,
-  requestReviewDraft,
-  syncWithBackend,
-  testSyncConnection,
-} from './syncApi'
-import type { SyncSnapshot } from '../types'
+import { requestReviewDraft, syncWithBackend, testSyncConnection } from './syncApi'
+import type { SyncRequest } from '../types'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -14,8 +9,12 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-function emptySnapshot(): SyncSnapshot {
-  return { games: [], logs: [], earnedTrophies: [] }
+function emptyRequest(): SyncRequest {
+  return {
+    cursor: null,
+    full: true,
+    changes: { games: [], journeys: [], logs: [], earnedTrophies: [] },
+  }
 }
 
 describe('syncApi', () => {
@@ -79,24 +78,24 @@ describe('syncApi', () => {
         jsonResponse(200, { games: [], logs: [], earnedTrophies: [], syncedAt: '2026-01-01T00:00:00Z' }),
       )
 
-      await syncWithBackend('https://example.test', 'token', emptySnapshot())
+      await syncWithBackend('https://example.test', 'token', emptyRequest())
 
       const [url, init] = fetchMock.mock.calls[0]
       expect(url).toBe('https://example.test/api/sync')
       expect(init?.method).toBe('POST')
       const headers = init?.headers as Record<string, string>
       expect(headers['Content-Type']).toBe('application/json')
-      expect(init?.body).toBe(JSON.stringify(emptySnapshot()))
+      expect(init?.body).toBe(JSON.stringify(emptyRequest()))
     })
 
     it('url-encodes the gameId in the review-draft path', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(200, { gameId: 'a/b c', draft: '' }))
 
-      await requestReviewDraft('https://example.test', 'token', 'a/b c', 'en')
+      await requestReviewDraft('https://example.test', 'token', 'a/b c', 'journey-1', 'en')
 
       const [url, init] = fetchMock.mock.calls[0]
       expect(url).toBe('https://example.test/api/ai/review-draft/a%2Fb%20c')
-      expect(init?.body).toBe(JSON.stringify({ language: 'en' }))
+      expect(init?.body).toBe(JSON.stringify({ journeyId: 'journey-1', language: 'en' }))
     })
   })
 
@@ -143,28 +142,5 @@ describe('syncApi', () => {
       await expectation
     })
 
-    it('uses the longer 5-minute window for enrichment', async () => {
-      vi.useFakeTimers()
-      let abortedEarly = false
-
-      fetchMock.mockImplementation(
-        (_url, init) =>
-          new Promise((resolve, reject) => {
-            init?.signal?.addEventListener('abort', () => {
-              abortedEarly = true
-              reject(new DOMException('aborted', 'AbortError'))
-            })
-            // Resolve after 4 minutes — comfortably inside the 5-minute enrich timeout
-            // but well past the 18s default. A regression that drops the longer timeout
-            // would abort here.
-            setTimeout(() => resolve(jsonResponse(202, {})), 4 * 60_000)
-          }),
-      )
-
-      const pending = requestEnrich('https://example.test', 'token')
-      await vi.advanceTimersByTimeAsync(4 * 60_000 + 100)
-      await pending
-      expect(abortedEarly).toBe(false)
-    })
   })
 })

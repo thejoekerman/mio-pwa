@@ -7,8 +7,12 @@ import { useI18n } from '../i18n'
 import { APP_LANGUAGES, APP_THEMES, type BackupData, type BackupImportMode } from '../types'
 import { isDemoMode } from '../lib/appMode'
 import { downloadBackupPayload, downloadTextFile } from '../lib/backupDownload'
+import {
+  DEFAULT_PLAY_LOG_SHARE_HASHTAGS,
+  DEFAULT_PLAY_LOG_SHARE_TEMPLATE,
+  renderPlayLogShareText,
+} from '../lib/playLogShare'
 import type { LibraryCsvImportPlan } from '../lib/libraryCsv'
-import { requestEnrich } from '../lib/syncApi'
 import {
   detectWebGpuSupport,
   getModelsForLanguage,
@@ -36,7 +40,7 @@ const {
   syncNow,
   testSyncConnection,
 } = useBacklog()
-const { settings, setAiLocalReviewModel, setLanguage, setTheme } = useSettings()
+const { settings, setAiLocalReviewModel, setLanguage, setPlayLogShareSettings, setTheme } = useSettings()
 const { t } = useI18n()
 const webGpuAvailable = ref(isWebGpuAvailable())
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -54,9 +58,18 @@ const csvImportPlan = ref<LibraryCsvImportPlan | null>(null)
 const CSV_PREVIEW_MESSAGE_LIMIT = 6
 const syncNotice = ref('')
 const syncNoticeTone = ref<'success' | 'error'>('success')
-const isEnriching = ref(false)
-const enrichNotice = ref('')
-const enrichNoticeTone = ref<'success' | 'error'>('success')
+const shareSettingsDialogOpen = ref(false)
+const shareTemplateDraft = ref('')
+const shareHashtagsDraft = ref('')
+const shareTemplatePreview = computed(() =>
+  renderPlayLogShareText(shareTemplateDraft.value, {
+    title: t('settings.shareExampleTitle'),
+    log: t('settings.shareExampleLog'),
+    platform: t('settings.shareExamplePlatform'),
+    status: t('status.playing'),
+    hashtags: shareHashtagsDraft.value,
+  }),
+)
 const languageOptions = computed(() =>
   APP_LANGUAGES.map((language) => ({
     title: t(`settings.language.${language}`),
@@ -71,7 +84,7 @@ const themeOptions = computed(() =>
 )
 const importModeOptions = computed(() => [
   { title: t('settings.mergeMode'), value: 'merge' },
-  { title: t('settings.replaceMode'), value: 'replace' },
+  ...(!isSyncConfigured.value ? [{ title: t('settings.replaceMode'), value: 'replace' }] : []),
 ])
 const csvPreviewIssueSummary = computed(() => {
   const plan = csvImportPlan.value
@@ -252,6 +265,12 @@ watch(
   },
 )
 
+watch(isSyncConfigured, (configured) => {
+  if (configured && importMode.value === 'replace') {
+    importMode.value = 'merge'
+  }
+})
+
 onMounted(async () => {
   webGpuAvailable.value = await detectWebGpuSupport()
 
@@ -303,6 +322,22 @@ function updateImportMode(value: string | null) {
   if (value === 'merge' || value === 'replace') {
     importMode.value = value
   }
+}
+
+function openShareSettings() {
+  shareTemplateDraft.value = settings.playLogShareTemplate
+  shareHashtagsDraft.value = settings.playLogShareHashtags
+  shareSettingsDialogOpen.value = true
+}
+
+function resetShareSettingsDraft() {
+  shareTemplateDraft.value = DEFAULT_PLAY_LOG_SHARE_TEMPLATE
+  shareHashtagsDraft.value = DEFAULT_PLAY_LOG_SHARE_HASHTAGS
+}
+
+function saveShareSettings() {
+  setPlayLogShareSettings(shareTemplateDraft.value, shareHashtagsDraft.value)
+  shareSettingsDialogOpen.value = false
 }
 
 async function handleExport() {
@@ -446,9 +481,13 @@ async function importSelectedBackup(file: File, input: HTMLInputElement) {
         : t('feedback.backupMergedNotice', { games: result.games, logs: result.logs })
   } catch (error) {
     console.error(error)
-    setFeedback(t('feedback.importFailed'), 'error')
+    const message =
+      importMode.value === 'replace' && isSyncConfigured.value
+        ? t('feedback.backupReplaceSyncBlocked')
+        : t('feedback.importFailed')
+    setFeedback(message, 'error')
     backupNoticeTone.value = 'error'
-    backupNotice.value = t('feedback.importFailed')
+    backupNotice.value = message
   } finally {
     input.value = ''
   }
@@ -469,31 +508,13 @@ async function handleTestConnection() {
   }
 }
 
-async function handleEnrich() {
-  isEnriching.value = true
-  enrichNotice.value = ''
-
-  try {
-    await requestEnrich(settings.syncApiBaseUrl, settings.syncToken)
-    enrichNoticeTone.value = 'success'
-    enrichNotice.value = t('settings.enrichSuccessNotice')
-    await syncNow({ silentSuccess: true })
-  } catch (error) {
-    enrichNoticeTone.value = 'error'
-    enrichNotice.value =
-      error instanceof Error ? error.message : t('settings.enrichFailed')
-  } finally {
-    isEnriching.value = false
-  }
-}
-
 async function handleSyncNow() {
   try {
     const result = await syncNow()
     syncNoticeTone.value = 'success'
     syncNotice.value = t('settings.syncCompletedNotice', {
-      games: result.games.filter((game) => game.deletedAt === null).length,
-      logs: result.logs.filter((logEntry) => logEntry.deletedAt === null).length,
+      games: result.totals.games,
+      logs: result.totals.logs,
     })
   } catch (error) {
     console.error(error)
@@ -558,6 +579,19 @@ async function handleSyncNow() {
           :model-value="settings.theme"
           @update:model-value="updateTheme"
         />
+      </div>
+    </section>
+
+    <section class="panel settings-section settings-compact-section">
+      <div class="settings-compact-copy">
+        <div>
+          <p class="section-kicker">{{ t('settings.shareKicker') }}</p>
+          <h2>{{ t('settings.shareTitle') }}</h2>
+          <p class="section-helper">{{ t('settings.shareHelper') }}</p>
+        </div>
+        <VBtn type="button" variant="outlined" color="primary" @click="openShareSettings">
+          {{ t('settings.shareConfigure') }}
+        </VBtn>
       </div>
     </section>
 
@@ -752,39 +786,6 @@ async function handleSyncNow() {
       </VAlert>
     </section>
 
-    <section v-if="!isDemoMode && isSyncConfigured" class="panel settings-section">
-      <div class="section-heading">
-        <div>
-          <p class="section-kicker">{{ t('settings.enrichKicker') }}</p>
-          <h2>{{ t('settings.enrichTitle') }}</h2>
-          <p class="section-helper">{{ t('settings.enrichHelper') }}</p>
-        </div>
-      </div>
-
-      <div class="settings-actions">
-        <VBtn
-          class="miolog-primary-action"
-          type="button"
-          color="primary"
-          :disabled="isEnriching || isSyncing"
-          @click="handleEnrich"
-        >
-          {{ isEnriching ? t('settings.enrichingNow') : t('settings.enrichNow') }}
-        </VBtn>
-      </div>
-
-      <VAlert
-        v-if="enrichNotice"
-        class="settings-notice"
-        density="comfortable"
-        variant="tonal"
-        :type="enrichNoticeTone === 'success' ? 'success' : 'error'"
-        aria-live="polite"
-      >
-        {{ enrichNotice }}
-      </VAlert>
-    </section>
-
     <section v-if="!isDemoMode" class="panel settings-section">
       <div class="section-heading">
         <div>
@@ -816,6 +817,9 @@ async function handleSyncNow() {
           :model-value="importMode"
           @update:model-value="updateImportMode"
         />
+        <p v-if="isSyncConfigured" class="settings-meta">
+          {{ t('settings.replaceDisabledBySync') }}
+        </p>
 
         <div class="settings-actions">
           <VBtn class="miolog-primary-action" type="button" color="primary" @click="handleExport">
@@ -932,6 +936,48 @@ async function handleSyncNow() {
           </VBtn>
           <VBtn class="miolog-primary-action" type="button" color="primary" @click="confirmLocalModelDownload">
             {{ t('settings.localAiConfirmDownload') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="shareSettingsDialogOpen" class="confirm-dialog" max-width="620">
+      <VCard>
+        <VCardTitle>{{ t('settings.shareDialogTitle') }}</VCardTitle>
+        <VCardText class="share-settings-dialog">
+          <VTextarea
+            v-model="shareTemplateDraft"
+            class="settings-control"
+            rows="7"
+            auto-grow
+            :label="t('settings.shareTemplateLabel')"
+            :hint="t('settings.shareTemplateHint')"
+            persistent-hint
+          />
+          <VTextField
+            v-model="shareHashtagsDraft"
+            class="settings-control"
+            :label="t('settings.shareHashtagsLabel')"
+            :hint="t('settings.shareHashtagsHint')"
+            persistent-hint
+          />
+          <div class="share-preview">
+            <div class="share-preview-heading">
+              <strong>{{ t('settings.sharePreview') }}</strong>
+              <span>{{ t('settings.shareCharacterCount', { count: shareTemplatePreview.length }) }}</span>
+            </div>
+            <p>{{ shareTemplatePreview }}</p>
+          </div>
+        </VCardText>
+        <VCardActions>
+          <VBtn type="button" variant="text" color="primary" @click="resetShareSettingsDraft">
+            {{ t('settings.shareReset') }}
+          </VBtn>
+          <VBtn type="button" variant="outlined" color="primary" @click="shareSettingsDialogOpen = false">
+            {{ t('settings.shareCancel') }}
+          </VBtn>
+          <VBtn class="miolog-primary-action" type="button" color="primary" @click="saveShareSettings">
+            {{ t('settings.shareSave') }}
           </VBtn>
         </VCardActions>
       </VCard>

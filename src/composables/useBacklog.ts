@@ -1,14 +1,20 @@
 import { computed, reactive, ref, toRaw, watch } from 'vue'
 import {
   deleteGame,
+  deleteJourney,
   ensureDemoData,
   getAllEarnedTrophies,
   getAllGames,
+  getAllJourneyLogs,
+  getAllJourneys,
   getAllLogs,
   getLogsForGame,
+  getLogsForJourney,
   resetDemoData,
   saveGame,
-  saveLogEntry,
+  saveGameMetadata,
+  saveJourney,
+  saveLogEntryForJourney,
 } from '../lib/backlogDb'
 import { translate, getStatusLabel } from '../i18n'
 import { useSettings } from './useSettings'
@@ -34,14 +40,20 @@ import {
   isWebGpuAvailable,
 } from '../lib/localReviewModels'
 import { dedupeTags } from '../lib/tags'
+import { getCurrentJourney, getGameDisplayStatus } from '../lib/gameJourneyState'
+import { getFinishedJourneyEntries, getFinishedJourneyYears } from '../lib/journeyAnalytics'
 import type {
   EarnedTrophy,
   FeedbackState,
   Game,
+  GameDisplayStatus,
   GameFormState,
   GameOwnershipFilter,
   GameSortOption,
   GameStatus,
+  LibraryStatusFilter,
+  Journey,
+  JourneyLogEntry,
   LibraryCsvImportResult,
   LogEntry,
   TrophyUnlockSource,
@@ -52,21 +64,24 @@ function createBacklogStore() {
     settings,
     setAiReviewDraftAvailable,
     setBackupReminderDismissedAt,
-    setIgdbMetadataAvailable,
+    setSyncApiVersion,
     setLastBackupExportedAt,
     setLastSyncError,
     setLastSyncedAt,
   } = useSettings()
   const ACTIVE_HOME_STATUSES: GameStatus[] = ['playing', 'ongoing']
   const games = ref<Game[]>([])
+  const journeys = ref<Journey[]>([])
   const selectedGameId = ref<string | null>(null)
+  const selectedJourneyId = ref<string | null>(null)
   const logs = ref<LogEntry[]>([])
   const allLogs = ref<LogEntry[]>([])
+  const journeyLogs = ref<JourneyLogEntry[]>([])
   const earnedTrophies = ref<EarnedTrophy[]>([])
   const trophyUnlockQueue = ref<EarnedTrophy[]>([])
   const latestTrophyUnlockSource = ref<TrophyUnlockSource | null>(null)
   const totalPlayLogCount = ref(0)
-  const statusFilter = ref<'all' | GameStatus>('backlog')
+  const statusFilter = ref<LibraryStatusFilter>('backlog')
   const ownershipFilter = ref<GameOwnershipFilter>('all')
   const finishedYearFilter = ref<'all' | string>('all')
   const sortOption = ref<GameSortOption>('created-desc')
@@ -92,7 +107,6 @@ function createBacklogStore() {
   const autoSyncStarted = ref(false)
   const capabilityRefreshStarted = ref(false)
   let feedbackId = 0
-  const localChangeRevision = ref(0)
 
   const gameForm = reactive<GameFormState>({
     id: null,
@@ -103,7 +117,11 @@ function createBacklogStore() {
     platform: '',
     ownershipType: '',
     tags: '',
-    igdbId: '',
+    wikidataId: '',
+    wikipediaTitle: '',
+    coverSourceUrl: '',
+    coverSourcePageUrl: '',
+    metadataReviewed: false,
     releaseYear: '',
     priority: '',
     developer: '',
@@ -118,6 +136,73 @@ function createBacklogStore() {
   const selectedGame = computed(
     () => games.value.find((game) => game.id === selectedGameId.value) ?? null,
   )
+  const selectedGameJourneys = computed(() =>
+    journeys.value
+      .filter((journey) => journey.gameId === selectedGameId.value && journey.deletedAt === null)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+  )
+  const selectedJourney = computed(() =>
+    selectedGameJourneys.value.find((journey) => journey.id === selectedJourneyId.value)
+      ?? getCurrentJourney(selectedGameJourneys.value),
+  )
+  const selectedJourneyGame = computed(() => {
+    const game = selectedGame.value
+    const journey = selectedJourney.value
+
+    return game && journey
+      ? {
+          ...game,
+          status: journey.status,
+          rating: journey.rating,
+          playTimeHours: journey.playTimeHours,
+          review: journey.review,
+          platform: journey.platform,
+          ownershipType: journey.ownershipType,
+          priority: journey.priority,
+          finishedAt: journey.finishedAt,
+          pausedAt: journey.pausedAt,
+          nudgeAt: journey.nudgeAt,
+          updatedAt: journey.updatedAt > game.updatedAt ? journey.updatedAt : game.updatedAt,
+        }
+      : game
+  })
+  const displayStatusByGameId = computed(
+    () => new Map(
+      games.value.map((game) => [
+        game.id,
+        getGameDisplayStatus(journeys.value.filter((journey) => journey.gameId === game.id))
+          ?? game.status,
+      ]),
+    ),
+  )
+  const latestFinishedAtByGameId = computed(() => {
+    const dates = new Map<string, string>()
+
+    for (const journey of journeys.value) {
+      if (journey.deletedAt !== null || journey.status !== 'finished' || !journey.finishedAt) {
+        continue
+      }
+
+      if (journey.finishedAt > (dates.get(journey.gameId) ?? '')) {
+        dates.set(journey.gameId, journey.finishedAt)
+      }
+    }
+
+    return dates
+  })
+  const selectedGameDisplayStatus = computed<GameDisplayStatus | null>(() =>
+    selectedGame.value
+      ? displayStatusByGameId.value.get(selectedGame.value.id) ?? selectedGame.value.status
+      : null,
+  )
+  const selectedJourneyDisplayStatus = computed<GameDisplayStatus | null>(() => {
+    const journey = selectedJourney.value
+    const currentJourney = getCurrentJourney(selectedGameJourneys.value)
+
+    return journey?.id === currentJourney?.id
+      ? selectedGameDisplayStatus.value
+      : journey?.status ?? null
+  })
   const canUseServerReviewDraft = computed(() =>
     Boolean(
       selectedGame.value &&
@@ -145,13 +230,25 @@ function createBacklogStore() {
   const isSyncConfigured = computed(() =>
     Boolean(settings.syncApiBaseUrl.trim() && settings.syncToken.trim()),
   )
+  const canStartReplay = computed(() =>
+    selectedJourney.value?.status === 'finished',
+  )
 
   const filteredGames = computed(() => {
     const query = searchQuery.value.trim().toLowerCase()
 
     const matchingGames = games.value.filter((game) => {
-      const matchesStatus =
-        statusFilter.value === 'all' || game.status === statusFilter.value
+      const gameJourneys = journeys.value.filter(
+        (journey) => journey.gameId === game.id && journey.deletedAt === null,
+      )
+      const currentJourney = getCurrentJourney(gameJourneys)
+      const displayStatus = displayStatusByGameId.value.get(game.id)
+      const matchesStatus = matchesLibraryStatus(
+        statusFilter.value,
+        currentJourney,
+        gameJourneys,
+        displayStatus,
+      )
       const matchesOwnership =
         ownershipFilter.value === 'all' ||
         game.ownershipType === ownershipFilter.value ||
@@ -159,9 +256,11 @@ function createBacklogStore() {
       const matchesFinishedYear =
         finishedYearFilter.value === 'all'
           ? true
-          : game.status === 'finished' &&
-            typeof game.finishedAt === 'string' &&
-            game.finishedAt.startsWith(finishedYearFilter.value)
+          : gameJourneys.some(
+              (journey) =>
+                journey.status === 'finished' &&
+                journey.finishedAt?.startsWith(finishedYearFilter.value),
+            )
       const matchesQuery =
         query.length === 0 ||
         game.title.toLowerCase().includes(query) ||
@@ -205,9 +304,27 @@ function createBacklogStore() {
     })
   })
 
+  function matchesLibraryStatus(
+    filter: LibraryStatusFilter,
+    currentJourney: Journey | null,
+    gameJourneys: Journey[],
+    displayStatus: GameDisplayStatus | undefined,
+  ) {
+    if (filter === 'all') return true
+    if (filter === 'replaying') return displayStatus === 'replaying'
+    if (filter === 'playing') return currentJourney?.status === 'playing'
+    if (filter === 'finished') {
+      return gameJourneys.some((journey) => journey.status === 'finished')
+    }
+
+    return currentJourney?.status === filter
+  }
+
   function compareFinishedAt(left: Game, right: Game) {
-    const leftTime = left.finishedAt ? new Date(left.finishedAt).getTime() : 0
-    const rightTime = right.finishedAt ? new Date(right.finishedAt).getTime() : 0
+    const leftFinishedAt = latestFinishedAtByGameId.value.get(left.id) ?? left.finishedAt
+    const rightFinishedAt = latestFinishedAtByGameId.value.get(right.id) ?? right.finishedAt
+    const leftTime = leftFinishedAt ? new Date(leftFinishedAt).getTime() : 0
+    const rightTime = rightFinishedAt ? new Date(rightFinishedAt).getTime() : 0
 
     return leftTime - rightTime || left.title.localeCompare(right.title)
   }
@@ -230,11 +347,12 @@ function createBacklogStore() {
 
   const stats = computed(() => {
     const total = games.value.length
-    const playing = games.value.filter((game) => game.status === 'playing').length
-    const ongoing = games.value.filter((game) => game.status === 'ongoing').length
-    const finished = games.value.filter((game) => game.status === 'finished').length
+    const visibleJourneys = journeys.value.filter((journey) => journey.deletedAt === null)
+    const playing = visibleJourneys.filter((journey) => journey.status === 'playing').length
+    const ongoing = visibleJourneys.filter((journey) => journey.status === 'ongoing').length
+    const finished = visibleJourneys.filter((journey) => journey.status === 'finished').length
     const playLogs = totalPlayLogCount.value
-    const backlog = games.value.filter((game) => game.status === 'backlog').length
+    const backlog = visibleJourneys.filter((journey) => journey.status === 'backlog').length
 
     return { total, playing, ongoing, finished, playLogs, backlog }
   })
@@ -287,13 +405,8 @@ function createBacklogStore() {
     )
   })
 
-  const finishedYearOptions = computed(() =>
-    [...new Set(
-      games.value
-        .map((game) => (typeof game.finishedAt === 'string' ? game.finishedAt.slice(0, 4) : ''))
-        .filter(Boolean),
-    )].sort((left, right) => right.localeCompare(left)),
-  )
+  const finishedJourneyEntries = computed(() => getFinishedJourneyEntries(games.value, journeys.value))
+  const finishedYearOptions = computed(() => getFinishedJourneyYears(finishedJourneyEntries.value))
 
   const canRateCurrentStatus = computed(
     () => gameForm.status === 'finished' || gameForm.status === 'abandoned',
@@ -330,23 +443,8 @@ function createBacklogStore() {
     document.addEventListener('visibilitychange', updateBrowserOnline)
   }
 
-  function markLocalChange() {
-    localChangeRevision.value += 1
-  }
-
   function parseTags(value: string) {
     return dedupeTags(value.split(','))
-  }
-
-  /**
-   * Optimization: Update a game in-place instead of reloading the entire table.
-   * Used after saveGame to avoid O(n) full reload + O(n×trophies) re-evaluation.
-   */
-  function updateGameInPlace(updatedGame: Game) {
-    const index = games.value.findIndex((game) => game.id === updatedGame.id)
-    if (index !== -1) {
-      games.value[index] = updatedGame
-    }
   }
 
   /**
@@ -366,15 +464,8 @@ function createBacklogStore() {
     return {
       ...source,
       tags: [...source.tags],
-      igdbDevelopers: cloneStringList(source.igdbDevelopers),
-      igdbPublishers: cloneStringList(source.igdbPublishers),
-      igdbThemes: cloneStringList(source.igdbThemes),
-      igdbGameModes: cloneStringList(source.igdbGameModes),
+      externalReferences: source.externalReferences?.map((reference) => ({ ...reference })),
     }
-  }
-
-  function cloneStringList(value: string[] | null | undefined) {
-    return Array.isArray(value) ? [...toRaw(value)] : null
   }
 
   function resetForm() {
@@ -386,7 +477,11 @@ function createBacklogStore() {
     gameForm.platform = ''
     gameForm.ownershipType = ''
     gameForm.tags = ''
-    gameForm.igdbId = ''
+    gameForm.wikidataId = ''
+    gameForm.wikipediaTitle = ''
+    gameForm.coverSourceUrl = ''
+    gameForm.coverSourcePageUrl = ''
+    gameForm.metadataReviewed = false
     gameForm.releaseYear = ''
     gameForm.priority = ''
     gameForm.developer = ''
@@ -415,7 +510,15 @@ function createBacklogStore() {
     gameForm.platform = game.platform
     gameForm.ownershipType = game.ownershipType ?? ''
     gameForm.tags = game.tags.join(', ')
-    gameForm.igdbId = game.igdbId === null ? '' : String(game.igdbId)
+    gameForm.wikidataId =
+      game.externalReferences?.find((reference) => reference.provider === 'wikidata')?.externalId ?? ''
+    gameForm.wikipediaTitle =
+      game.externalReferences?.find((reference) => reference.provider === 'wikipedia')?.externalId ?? ''
+    gameForm.coverSourceUrl = game.coverSource?.provider === 'wikipedia' ? game.coverUrl ?? '' : ''
+    gameForm.coverSourcePageUrl = game.coverSource?.provider === 'wikipedia'
+      ? game.coverSource.pageUrl ?? ''
+      : ''
+    gameForm.metadataReviewed = false
     gameForm.releaseYear = game.releaseYear ? String(game.releaseYear) : ''
     gameForm.priority = game.priority ?? ''
     gameForm.developer = game.developer ?? ''
@@ -428,8 +531,16 @@ function createBacklogStore() {
   }
 
   function startEditingGame(game: Game) {
+    const shouldKeepSelectedJourney = selectedGameId.value === game.id && selectedJourneyId.value !== null
     selectedGameId.value = game.id
-    editGame(game)
+
+    if (!shouldKeepSelectedJourney) {
+      selectedJourneyId.value = getCurrentJourney(
+        journeys.value.filter((journey) => journey.gameId === game.id && journey.deletedAt === null),
+      )?.id ?? null
+    }
+
+    editGame(selectedJourneyGame.value ?? game)
   }
 
   function startCreatingGame() {
@@ -437,14 +548,18 @@ function createBacklogStore() {
   }
 
   async function loadGames() {
-    const [allGames, storedLogs, storedTrophies] = await Promise.all([
+    const [allGames, storedJourneys, storedLogs, storedJourneyLogs, storedTrophies] = await Promise.all([
       getAllGames(),
+      getAllJourneys(),
       getAllLogs(),
+      getAllJourneyLogs(),
       getAllEarnedTrophies(),
     ])
 
     games.value = allGames
+    journeys.value = storedJourneys
     allLogs.value = storedLogs
+    journeyLogs.value = storedJourneyLogs
     earnedTrophies.value = storedTrophies
     totalPlayLogCount.value = storedLogs.length
 
@@ -466,7 +581,9 @@ function createBacklogStore() {
       return
     }
 
-    logs.value = await getLogsForGame(gameId)
+    logs.value = selectedJourney.value
+      ? await getLogsForJourney(selectedJourney.value.id)
+      : await getLogsForGame(gameId)
   }
 
   async function ensureLoaded(force = false) {
@@ -494,8 +611,25 @@ function createBacklogStore() {
 
   async function selectGame(gameId: string | null) {
     selectedGameId.value = gameId
+    selectedJourneyId.value = getCurrentJourney(
+      journeys.value.filter((journey) => journey.gameId === gameId && journey.deletedAt === null),
+    )?.id ?? null
     reviewDraftPreview.value = ''
     await loadLogs(gameId)
+  }
+
+  async function selectJourney(journeyId: string) {
+    const journey = journeys.value.find(
+      (candidate) => candidate.id === journeyId && candidate.gameId === selectedGameId.value,
+    )
+
+    if (!journey) {
+      return
+    }
+
+    selectedJourneyId.value = journey.id
+    reviewDraftPreview.value = ''
+    await loadLogs(journey.gameId)
   }
 
   // Forward declaration, assigned once below to break a circular dependency with the
@@ -513,7 +647,6 @@ function createBacklogStore() {
       isTestingSyncConnection,
       autoSyncStarted,
       capabilityRefreshStarted,
-      localChangeRevision,
       settings,
       ensureLoaded,
       loadLogs,
@@ -522,18 +655,18 @@ function createBacklogStore() {
       resetForm,
       setFeedback,
       setAiReviewDraftAvailable,
-      setIgdbMetadataAvailable,
+      setSyncApiVersion,
       setLastSyncedAt,
       setLastSyncError,
     })
 
   const trophyHandlers = createTrophyHandlers({
     games,
+    journeys,
     allLogs,
     earnedTrophies,
     trophyUnlockQueue,
     latestTrophyUnlockSource,
-    markLocalChange,
     scheduleAutoSync,
   })
   unlockEarnedTrophies = trophyHandlers.unlockEarnedTrophies
@@ -551,6 +684,7 @@ function createBacklogStore() {
 
     try {
       const existing = games.value.find((game) => game.id === gameForm.id)
+      const editedJourneyId = existing ? selectedJourney.value?.id ?? null : null
       const existingPlain = existing ? toPlainGame(existing) : null
       const now = getNextUpdatedAt(existingPlain?.updatedAt)
       const ratingInput = gameForm.rating.trim()
@@ -578,20 +712,32 @@ function createBacklogStore() {
         return
       }
 
-      const igdbIdInput = gameForm.igdbId.trim()
-      const parsedIgdbId =
-        igdbIdInput === '' ? null : Number.parseInt(igdbIdInput.replace(/[^\d]/g, ''), 10)
-      const normalizedIgdbId =
-        parsedIgdbId === null || Number.isNaN(parsedIgdbId) || parsedIgdbId <= 0
-          ? null
-          : parsedIgdbId
       const manualDeveloper = gameForm.developer.trim()
       const manualPublisher = gameForm.publisher.trim()
       const manualCoverUrl = gameForm.coverUrl.trim()
-      const canEditIgdbMetadata = isSyncConfigured.value && settings.igdbMetadataAvailable
-      const nextIgdbId = canEditIgdbMetadata ? normalizedIgdbId : existingPlain?.igdbId ?? null
-      const shouldPreserveIgdbMetadata = isSyncConfigured.value && existingPlain?.igdbId === nextIgdbId
       const normalizedReleaseYear = normalizeReleaseYear(gameForm.releaseYear)
+      const wikidataId = /^Q\d+$/.test(gameForm.wikidataId) ? gameForm.wikidataId : ''
+      const existingExternalReferences = existingPlain?.externalReferences ?? []
+      const wikipediaTitle = gameForm.wikipediaTitle.trim()
+      const externalReferences = [
+        ...existingExternalReferences.filter(
+          (reference) => reference.provider !== 'wikidata' && reference.provider !== 'wikipedia',
+        ),
+        ...(wikidataId
+          ? [{
+              provider: 'wikidata' as const,
+              externalId: wikidataId,
+              url: `https://www.wikidata.org/wiki/${wikidataId}`,
+            }]
+          : []),
+        ...(wikipediaTitle && gameForm.coverSourcePageUrl
+          ? [{
+              provider: 'wikipedia' as const,
+              externalId: wikipediaTitle,
+              url: gameForm.coverSourcePageUrl,
+            }]
+          : []),
+      ]
 
       if (canRateCurrentStatus.value && normalizedRating !== null) {
         gameForm.rating = String(normalizedRating)
@@ -599,10 +745,6 @@ function createBacklogStore() {
 
       if (normalizedPlayTime !== null) {
         gameForm.playTimeHours = String(normalizedPlayTime)
-      }
-
-      if (canEditIgdbMetadata && normalizedIgdbId !== null) {
-        gameForm.igdbId = String(normalizedIgdbId)
       }
 
       if (normalizedReleaseYear !== null) {
@@ -618,22 +760,21 @@ function createBacklogStore() {
         platform: gameForm.platform.trim(),
         ownershipType: gameForm.ownershipType || null,
         tags: parseTags(gameForm.tags),
-        igdbId: isSyncConfigured.value ? nextIgdbId : null,
-        igdbUrl: shouldPreserveIgdbMetadata ? existingPlain?.igdbUrl ?? null : null,
-        igdbTtbHastilySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbHastilySeconds ?? null : null,
-        igdbTtbNormallySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbNormallySeconds ?? null : null,
-        igdbTtbCompletelySeconds: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbCompletelySeconds ?? null : null,
-        igdbTtbCount: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbCount ?? null : null,
-        igdbTtbUpdatedAt: shouldPreserveIgdbMetadata ? existingPlain?.igdbTtbUpdatedAt ?? null : null,
-        igdbDevelopers: shouldPreserveIgdbMetadata ? existingPlain?.igdbDevelopers ?? null : null,
-        igdbPublishers: shouldPreserveIgdbMetadata ? existingPlain?.igdbPublishers ?? null : null,
-        igdbThemes: shouldPreserveIgdbMetadata ? existingPlain?.igdbThemes ?? null : null,
-        igdbGameModes: shouldPreserveIgdbMetadata ? existingPlain?.igdbGameModes ?? null : null,
-        releaseYear: normalizedReleaseYear ?? (shouldPreserveIgdbMetadata ? existingPlain?.releaseYear ?? null : null),
+        externalReferences,
+        metadataReviewedAt:
+          gameForm.metadataReviewed || wikidataId !==
+          (existingExternalReferences.find((reference) => reference.provider === 'wikidata')?.externalId ?? '')
+            ? now
+            : existingPlain?.metadataReviewedAt ?? null,
+        releaseYear: normalizedReleaseYear ?? existingPlain?.releaseYear ?? null,
         priority: gameForm.priority || null,
         developer: manualDeveloper || null,
         publisher: manualPublisher || null,
-        coverUrl: manualCoverUrl || (shouldPreserveIgdbMetadata ? existingPlain?.coverUrl ?? null : null),
+        coverUrl: manualCoverUrl || existingPlain?.coverUrl || null,
+        coverSource:
+          manualCoverUrl && manualCoverUrl === gameForm.coverSourceUrl && gameForm.coverSourcePageUrl
+            ? { provider: 'wikipedia', pageUrl: gameForm.coverSourcePageUrl }
+            : { provider: 'manual', pageUrl: null },
         review: gameForm.review.trim(),
         finishedAt:
           gameForm.status === 'finished'
@@ -649,14 +790,33 @@ function createBacklogStore() {
         deletedAt: existingPlain?.deletedAt ?? null,
       }
 
-      await saveGame(game)
-      markLocalChange()
-      if (existing) {
-        updateGameInPlace(game)
+      if (existing && selectedJourney.value) {
+        await saveGameMetadata(game)
+        await saveJourney({
+          ...selectedJourney.value,
+          status: game.status,
+          rating: game.rating,
+          playTimeHours: game.playTimeHours,
+          platform: game.platform,
+          ownershipType: game.ownershipType,
+          priority: game.priority ?? null,
+          review: game.review,
+          finishedAt: game.finishedAt,
+          pausedAt: game.pausedAt,
+          nudgeAt: game.nudgeAt,
+          updatedAt: now,
+        })
       } else {
+        await saveGame(game)
+      }
+      await loadGames()
+      if (!existing && !games.value.some((candidate) => candidate.id === game.id)) {
         games.value.push(game)
       }
       await selectGame(game.id)
+      if (editedJourneyId) {
+        await selectJourney(editedJourneyId)
+      }
       await unlockEarnedTrophies('user-action')
       editGame(game)
       setFeedback(
@@ -672,7 +832,6 @@ function createBacklogStore() {
 
   async function removeGame(game: Game) {
     await deleteGame(game.id)
-    markLocalChange()
     removeGameInPlace(game.id)
     allLogs.value = allLogs.value.filter((log) => log.gameId !== game.id)
     totalPlayLogCount.value = allLogs.value.length
@@ -688,11 +847,35 @@ function createBacklogStore() {
     return true
   }
 
+  async function removeJourney(journey: Journey) {
+    const gameJourneys = journeys.value.filter(
+      (candidate) => candidate.gameId === journey.gameId && candidate.deletedAt === null,
+    )
+
+    if (gameJourneys.length <= 1) {
+      return false
+    }
+
+    const deleted = await deleteJourney(journey.id)
+    if (!deleted) {
+      return false
+    }
+
+    selectedJourneyId.value = null
+    await loadGames()
+    await selectGame(journey.gameId)
+    await unlockEarnedTrophies('user-action')
+    setFeedback(translate(settings.language, 'feedback.journeyDeleted'))
+    scheduleAutoSync()
+    return true
+  }
+
   async function saveCurrentLog() {
-    const currentGame = selectedGame.value
+    const currentGame = selectedJourneyGame.value
+    const currentJourney = selectedJourney.value
     const content = logDraft.value.trim()
 
-    if (!currentGame || !content) {
+    if (!currentGame || !currentJourney || !content) {
       return
     }
 
@@ -707,16 +890,15 @@ function createBacklogStore() {
       deletedAt: null,
     }
 
-    await saveLogEntry(logEntry)
-    const updatedGame = {
-      ...currentGamePlain,
+    await saveLogEntryForJourney(logEntry, currentJourney.id)
+    const updatedJourney = {
+      ...currentJourney,
       updatedAt: now,
     }
-    await saveGame(updatedGame)
-    markLocalChange()
+    await saveJourney(updatedJourney)
 
     logDraft.value = ''
-    updateGameInPlace(updatedGame)
+    await loadGames()
     allLogs.value = [...allLogs.value, logEntry]
     totalPlayLogCount.value = allLogs.value.length
     await loadLogs(currentGame.id)
@@ -726,11 +908,12 @@ function createBacklogStore() {
   }
 
   async function updateLogEntry(logId: string, content: string) {
-    const currentGame = selectedGame.value
+    const currentGame = selectedJourneyGame.value
+    const currentJourney = selectedJourney.value
     const trimmedContent = content.trim()
     const existingLog = logs.value.find((logEntry) => logEntry.id === logId)
 
-    if (!currentGame || !existingLog || existingLog.gameId !== currentGame.id || !trimmedContent) {
+    if (!currentGame || !currentJourney || !existingLog || existingLog.gameId !== currentGame.id || !trimmedContent) {
       return false
     }
 
@@ -755,15 +938,14 @@ function createBacklogStore() {
       deletedAt: existingLog.deletedAt ?? null,
     }
 
-    await saveLogEntry(updatedLogEntry)
-    const updatedGame = {
-      ...currentGamePlain,
+    await saveLogEntryForJourney(updatedLogEntry, currentJourney.id)
+    const updatedJourney = {
+      ...currentJourney,
       updatedAt: now,
     }
-    await saveGame(updatedGame)
-    markLocalChange()
+    await saveJourney(updatedJourney)
 
-    updateGameInPlace(updatedGame)
+    await loadGames()
     await loadLogs(currentGame.id)
     await unlockEarnedTrophies('user-action')
     setFeedback(translate(settings.language, 'feedback.logUpdated'))
@@ -772,8 +954,16 @@ function createBacklogStore() {
     return true
   }
 
-  async function updateGameStatus(game: Game, status: GameStatus) {
-    if (game.status === status) {
+  async function updateCurrentJourneyStatus(game: Game, status: GameStatus) {
+    const journey = getCurrentJourney(
+      journeys.value.filter((candidate) => candidate.gameId === game.id),
+    )
+
+    if (!journey) {
+      return
+    }
+
+    if (journey.status === status) {
       setFeedback(
         translate(settings.language, 'feedback.alreadyStatus', {
           status: getStatusLabel(settings.language, status),
@@ -785,37 +975,35 @@ function createBacklogStore() {
     }
 
     try {
-      const gamePlain = toPlainGame(game)
-      const updatedGame: Game = {
-        ...gamePlain,
+      const updatedJourney: Journey = {
+        ...journey,
         status,
         rating:
-          status === 'finished' || status === 'abandoned' ? game.rating : null,
-        playTimeHours: game.playTimeHours,
-        finishedAt: status === 'finished' ? game.finishedAt ?? getTodayDate() : null,
-        pausedAt: status === 'paused' ? (game.status === 'paused' ? game.pausedAt : null) ?? getTodayDate() : null,
-        nudgeAt: status === 'paused' ? (game.status === 'paused' ? game.nudgeAt : null) ?? addDaysDate(14) : null,
-        updatedAt: getNextUpdatedAt(gamePlain.updatedAt),
+          status === 'finished' || status === 'abandoned' ? journey.rating : null,
+        finishedAt: status === 'finished' ? journey.finishedAt ?? getTodayDate() : null,
+        pausedAt: status === 'paused' ? (journey.status === 'paused' ? journey.pausedAt : null) ?? getTodayDate() : null,
+        nudgeAt: status === 'paused' ? (journey.status === 'paused' ? journey.nudgeAt : null) ?? addDaysDate(14) : null,
+        updatedAt: getNextUpdatedAt(journey.updatedAt),
       }
 
-      await saveGame(updatedGame)
-      markLocalChange()
-      updateGameInPlace(updatedGame)
-      await selectGame(updatedGame.id)
+      await saveJourney(updatedJourney)
+      await loadGames()
+      await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
 
-      if (status === 'finished' && game.status !== 'finished') {
+      if (status === 'finished' && journey.status !== 'finished') {
         void fireCompletionConfetti()
       }
 
-      if (gameForm.id === updatedGame.id) {
-        editGame(updatedGame)
+      if (gameForm.id === game.id) {
+        const refreshedGame = games.value.find((candidate) => candidate.id === game.id)
+        if (refreshedGame) editGame(refreshedGame)
       }
 
       setFeedback(
         translate(settings.language, 'feedback.movedToStatus', {
           status: getStatusLabel(settings.language, status),
-          title: updatedGame.title,
+          title: game.title,
         }),
       )
       scheduleAutoSync()
@@ -830,36 +1018,183 @@ function createBacklogStore() {
     }
   }
 
-  async function addPlayTime(game: Game, hoursToAdd: number) {
-    try {
-      const gamePlain = toPlainGame(game)
-      const currentTotal = game.playTimeHours ?? 0
-      const newTotal = Math.round((currentTotal + hoursToAdd) * 10) / 10
-      const updatedGame: Game = {
-        ...gamePlain,
-        playTimeHours: newTotal,
-        updatedAt: getNextUpdatedAt(gamePlain.updatedAt),
-      }
+  async function updateSelectedJourneyStatus(status: GameStatus) {
+    const game = selectedGame.value
+    const journey = selectedJourney.value
 
-      await saveGame(updatedGame)
-      markLocalChange()
-      updateGameInPlace(updatedGame)
-      await selectGame(updatedGame.id)
-      await unlockEarnedTrophies('user-action')
+    if (!game || !journey) {
+      return
+    }
 
-      if (gameForm.id === updatedGame.id) {
-        gameForm.playTimeHours = String(newTotal)
-      }
-
+    if (journey.status === status) {
       setFeedback(
-        translate(settings.language, 'feedback.timeAdded', {
-          hours: hoursToAdd,
-          title: updatedGame.title,
+        translate(settings.language, 'feedback.alreadyStatus', {
+          status: getStatusLabel(settings.language, status),
+          title: game.title,
         }),
+        'info',
       )
-      scheduleAutoSync()
+      return
+    }
+
+    const updatedJourney: Journey = {
+      ...journey,
+      status,
+      rating: status === 'finished' || status === 'abandoned' ? journey.rating : null,
+      finishedAt: status === 'finished' ? journey.finishedAt ?? getTodayDate() : null,
+      pausedAt: status === 'paused' ? journey.pausedAt ?? getTodayDate() : null,
+      nudgeAt: status === 'paused' ? journey.nudgeAt ?? addDaysDate(14) : null,
+      updatedAt: getNextUpdatedAt(journey.updatedAt),
+    }
+
+    await saveJourney(updatedJourney)
+    await loadGames()
+    await selectJourney(updatedJourney.id)
+    await unlockEarnedTrophies('user-action')
+
+    if (status === 'finished' && journey.status !== 'finished') {
+      void fireCompletionConfetti()
+    }
+
+    setFeedback(
+      translate(settings.language, 'feedback.movedToStatus', {
+        status: getStatusLabel(settings.language, status),
+        title: game.title,
+      }),
+    )
+    scheduleAutoSync()
+  }
+
+  async function addSelectedJourneyPlayTime(hoursToAdd: number) {
+    const journey = selectedJourney.value
+    const game = selectedGame.value
+
+    if (!journey || !game) {
+      return
+    }
+
+    const newTotal = Math.round(((journey.playTimeHours ?? 0) + hoursToAdd) * 10) / 10
+    const updatedJourney = {
+      ...journey,
+      playTimeHours: newTotal,
+      updatedAt: getNextUpdatedAt(journey.updatedAt),
+    }
+
+    await saveJourney(updatedJourney)
+    await loadGames()
+    await selectJourney(updatedJourney.id)
+    setFeedback(
+      translate(settings.language, 'feedback.timeAdded', {
+        hours: hoursToAdd,
+        title: game.title,
+      }),
+    )
+    scheduleAutoSync()
+  }
+
+  async function startReplay(game: Game) {
+    if (selectedJourney.value?.status !== 'finished') {
+      return false
+    }
+
+    try {
+      const now = getNextUpdatedAt(game.updatedAt)
+      const journey: Journey = {
+        id: createId(),
+        gameId: game.id,
+        status: 'playing',
+        platform: game.platform,
+        ownershipType: game.ownershipType,
+        priority: null,
+        rating: null,
+        review: '',
+        playTimeHours: null,
+        startedAt: getTodayDate(),
+        finishedAt: null,
+        pausedAt: null,
+        nudgeAt: null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+
+      await saveJourney(journey)
+      await loadGames()
+      await selectGame(game.id)
+      await unlockEarnedTrophies('user-action')
+      setFeedback(translate(settings.language, 'feedback.replayStarted', { title: game.title }))
+      return true
     } catch {
-      setFeedback(translate(settings.language, 'feedback.timeAddFailed'), 'error')
+      setFeedback(
+        translate(settings.language, 'feedback.replayStartFailed', { title: game.title }),
+        'error',
+      )
+      return false
+    }
+  }
+
+  async function addCurrentJourneyToGame(game: Game) {
+    const ratingInput = gameForm.rating.trim()
+    const parsedRating =
+      ratingInput === '' ? null : Number.parseInt(ratingInput.replace(/[^\d]/g, ''), 10)
+    const normalizedRating =
+      parsedRating === null || Number.isNaN(parsedRating)
+        ? null
+        : Math.min(Math.max(parsedRating, 1), 10)
+    const playTimeInput = gameForm.playTimeHours.trim()
+    const parsedPlayTime =
+      playTimeInput === '' ? null : Number.parseFloat(playTimeInput.replace(',', '.'))
+    const normalizedPlayTime =
+      parsedPlayTime === null || Number.isNaN(parsedPlayTime) || parsedPlayTime < 0
+        ? null
+        : Math.round(parsedPlayTime * 10) / 10
+
+    if (canRateCurrentStatus.value && ratingInput !== '' && normalizedRating === null) {
+      setFeedback(translate(settings.language, 'feedback.ratingInvalid'), 'error')
+      return false
+    }
+
+    if (playTimeInput !== '' && normalizedPlayTime === null) {
+      setFeedback(translate(settings.language, 'feedback.playTimeInvalid'), 'error')
+      return false
+    }
+
+    isSaving.value = true
+
+    try {
+      const now = getNextUpdatedAt(game.updatedAt)
+      const journey: Journey = {
+        id: createId(),
+        gameId: game.id,
+        status: gameForm.status,
+        platform: gameForm.platform.trim(),
+        ownershipType: gameForm.ownershipType || null,
+        priority: gameForm.priority || null,
+        rating: canRateCurrentStatus.value ? normalizedRating : null,
+        review: gameForm.review.trim(),
+        playTimeHours: normalizedPlayTime,
+        startedAt:
+          gameForm.status === 'playing' || gameForm.status === 'ongoing' ? getTodayDate() : null,
+        finishedAt:
+          gameForm.status === 'finished' ? gameForm.finishedAt || getTodayDate() : null,
+        pausedAt:
+          gameForm.status === 'paused' ? gameForm.pausedAt || getTodayDate() : null,
+        nudgeAt: gameForm.status === 'paused' ? gameForm.nudgeAt || null : null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+
+      await saveJourney(journey)
+      await loadGames()
+      await selectGame(game.id)
+      await selectJourney(journey.id)
+      await unlockEarnedTrophies('user-action')
+      setFeedback(translate(settings.language, 'feedback.journeyAdded', { title: game.title }))
+      scheduleAutoSync()
+      return true
+    } finally {
+      isSaving.value = false
     }
   }
 
@@ -898,7 +1233,6 @@ function createBacklogStore() {
       await saveGame(toPlainGame(game))
     }
 
-    markLocalChange()
     await ensureLoaded(true)
     await unlockEarnedTrophies('import')
     await loadLogs(selectedGameId.value)
@@ -912,31 +1246,34 @@ function createBacklogStore() {
   }
 
   async function snoozePausedGame(game: Game, days: number) {
-    if (game.status !== 'paused') {
+    const journey = getCurrentJourney(
+      journeys.value.filter((candidate) => candidate.gameId === game.id),
+    )
+
+    if (journey?.status !== 'paused') {
       return
     }
 
     try {
-      const gamePlain = toPlainGame(game)
-      const updatedGame: Game = {
-        ...gamePlain,
+      const updatedJourney: Journey = {
+        ...journey,
         nudgeAt: addDaysDate(days),
-        updatedAt: getNextUpdatedAt(gamePlain.updatedAt),
+        updatedAt: getNextUpdatedAt(journey.updatedAt),
       }
 
-      await saveGame(updatedGame)
-      markLocalChange()
-      updateGameInPlace(updatedGame)
-      await selectGame(updatedGame.id)
+      await saveJourney(updatedJourney)
+      await loadGames()
+      await selectGame(game.id)
       await unlockEarnedTrophies('user-action')
 
-      if (gameForm.id === updatedGame.id) {
-        editGame(updatedGame)
+      if (gameForm.id === game.id) {
+        const refreshedGame = games.value.find((candidate) => candidate.id === game.id)
+        if (refreshedGame) editGame(refreshedGame)
       }
 
       setFeedback(
         translate(settings.language, 'feedback.pausedNudgeSnoozed', {
-          title: updatedGame.title,
+          title: game.title,
         }),
       )
       scheduleAutoSync()
@@ -952,6 +1289,25 @@ function createBacklogStore() {
     }).format(new Date(value))
   }
 
+  async function applySelectedJourneyReview(review: string) {
+    const journey = selectedJourney.value
+
+    if (!journey) {
+      return
+    }
+
+    const updatedJourney = {
+      ...journey,
+      review,
+      updatedAt: getNextUpdatedAt(journey.updatedAt),
+    }
+
+    await saveJourney(updatedJourney)
+    await loadGames()
+    await selectJourney(updatedJourney.id)
+    scheduleAutoSync()
+  }
+
   const { exportBackup, dismissBackupReminder, importBackup } = createBackupHandlers({
     selectedGameId,
     settings,
@@ -965,8 +1321,9 @@ function createBacklogStore() {
 
   const { generateReviewDraft, applyReviewDraft, discardReviewDraft } =
     createAiHandlers({
-      selectedGame,
-      gameForm,
+      selectedGame: selectedJourneyGame,
+      selectedJourneyId,
+      logs,
       settings,
       serverReviewDraftReady: canUseServerReviewDraft,
       isDraftingReview,
@@ -974,11 +1331,7 @@ function createBacklogStore() {
       localReviewProgress,
       setFeedback,
       ensureSyncConfig,
-      toPlainGame,
-      updateGameInPlace,
-      selectGame,
-      editGame,
-      markLocalChange,
+      applyReview: applySelectedJourneyReview,
       scheduleAutoSync,
     })
 
@@ -988,7 +1341,6 @@ function createBacklogStore() {
     }
 
     await resetDemoData()
-    markLocalChange()
     selectedGameId.value = null
     logDraft.value = ''
     reviewDraftPreview.value = ''
@@ -1028,6 +1380,7 @@ function createBacklogStore() {
 
   return {
     canRateCurrentStatus,
+    canStartReplay,
     canUseReviewDraft,
     canUseLocalReviewDraft,
     currentFocus,
@@ -1036,6 +1389,7 @@ function createBacklogStore() {
     dismissTrophyUnlocks,
     dismissBackupReminder,
     duePausedGames,
+    displayStatusByGameId,
     editGame,
     earnedTrophies,
     earnedTrophyViews,
@@ -1045,6 +1399,7 @@ function createBacklogStore() {
     filteredGames,
     finishedYearFilter,
     finishedYearOptions,
+    finishedJourneyEntries,
     formatDate,
     gameForm,
     generateReviewDraft,
@@ -1059,6 +1414,8 @@ function createBacklogStore() {
     isSyncConfigured,
     isSyncing,
     isTestingSyncConnection,
+    journeys,
+    journeyLogs,
     localReviewProgress,
     logDraft,
     logs,
@@ -1066,6 +1423,7 @@ function createBacklogStore() {
     recentLogs,
     reviewDraftPreview,
     removeGame,
+    removeJourney,
     resetForm,
     resetDemoLibrary,
     resetLibraryFilters,
@@ -1075,14 +1433,22 @@ function createBacklogStore() {
     updateLogEntry,
     searchQuery,
     selectGame,
+    selectJourney,
     selectedGame,
+    selectedGameJourneys,
+    selectedGameDisplayStatus,
     selectedGameId,
+    selectedJourney,
+    selectedJourneyDisplayStatus,
+    selectedJourneyGame,
+    selectedJourneyId,
     setFeedback,
     previewLibraryCsvImport,
     sortOption,
     startAutoSync,
     startCreatingGame,
     startEditingGame,
+    startReplay,
     stats,
     statusFilter,
     shouldShowBackupReminder,
@@ -1091,8 +1457,10 @@ function createBacklogStore() {
     trophyUnlockQueue,
     latestTrophyUnlockSource,
     trophyViews,
-    addPlayTime,
-    updateGameStatus,
+    addSelectedJourneyPlayTime,
+    addCurrentJourneyToGame,
+    updateCurrentJourneyStatus,
+    updateSelectedJourneyStatus,
     snoozePausedGame,
     applyReviewDraft,
   }

@@ -8,6 +8,8 @@ export const GAME_STATUSES = [
 ] as const
 
 export type GameStatus = (typeof GAME_STATUSES)[number]
+export type GameDisplayStatus = GameStatus | 'replaying'
+export type LibraryStatusFilter = 'all' | GameDisplayStatus
 
 export const APP_LANGUAGES = ['en', 'de', 'ja'] as const
 
@@ -82,6 +84,80 @@ export const SUGGESTED_TAGS = [
   'Indie',
 ] as const
 
+// Transitional 3.0 persistence contracts. The existing `Game` and `LogEntry`
+// interfaces remain the 2.x UI projection until each feature consumes Game +
+// Journey directly.
+export type MetadataProvider = 'wikidata' | 'wikipedia' | 'howlongtobeat'
+
+export interface ExternalReference {
+  provider: MetadataProvider
+  externalId: string
+  url: string | null
+}
+
+export interface PlaytimeEstimates {
+  mainStoryHours: number | null
+  mainExtrasHours: number | null
+  completionistHours: number | null
+  source: 'howlongtobeat'
+  refreshedAt: string
+}
+
+export interface GameArtwork {
+  url: string
+  source: {
+    provider: MetadataProvider | 'manual'
+    pageUrl: string | null
+  }
+}
+
+export interface CanonicalGame {
+  id: string
+  title: string
+  releaseYear: number | null
+  developers: string[]
+  publishers: string[]
+  genres: string[]
+  themes: string[]
+  gameModes: string[]
+  tags: string[]
+  cover: GameArtwork | null
+  externalReferences: ExternalReference[]
+  playtimeEstimates: PlaytimeEstimates | null
+  metadataReviewedAt: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface Journey {
+  id: string
+  gameId: string
+  status: GameStatus
+  platform: string
+  ownershipType: GameOwnershipType | null
+  priority: GamePriority | null
+  rating: number | null
+  review: string
+  playTimeHours: number | null
+  startedAt: string | null
+  finishedAt: string | null
+  pausedAt: string | null
+  nudgeAt: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface JourneyLogEntry {
+  id: string
+  journeyId: string
+  content: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
 export interface Game {
   id: string
   title: string
@@ -92,17 +168,12 @@ export interface Game {
   platform: string
   ownershipType: GameOwnershipType | null
   tags: string[]
-  igdbId: number | null
-  igdbUrl?: string | null
-  igdbTtbHastilySeconds?: number | null
-  igdbTtbNormallySeconds?: number | null
-  igdbTtbCompletelySeconds?: number | null
-  igdbTtbCount?: number | null
-  igdbTtbUpdatedAt?: string | null
-  igdbDevelopers?: string[] | null
-  igdbPublishers?: string[] | null
-  igdbThemes?: string[] | null
-  igdbGameModes?: string[] | null
+  genres?: string[]
+  themes?: string[]
+  gameModes?: string[]
+  externalReferences?: ExternalReference[]
+  metadataReviewedAt?: string | null
+  coverSource?: GameArtwork['source'] | null
   releaseYear?: number | null
   priority?: GamePriority | null
   developer?: string | null
@@ -141,15 +212,45 @@ export type TrophyUnlockSource = 'startup' | 'user-action' | 'import' | 'sync'
 export interface BackupData {
   version: number
   exportedAt: string
-  games: Game[]
-  logs: LogEntry[]
+  games: CanonicalGame[]
+  journeys: Journey[]
+  logs: JourneyLogEntry[]
   earnedTrophies?: EarnedTrophy[]
 }
 
-export interface SyncSnapshot {
-  games: Game[]
-  logs: LogEntry[]
+export type SyncEntity = 'game' | 'journey' | 'log' | 'earnedTrophy'
+
+export interface PendingSyncRecord {
+  key: string
+  entity: SyncEntity
+  id: string
+  queuedUpdatedAt: string
+}
+
+export interface SyncState {
+  id: 'active'
+  serverIdentity: string
+  serverCursor: number
+}
+
+export interface SyncChanges {
+  games: CanonicalGame[]
+  journeys: Journey[]
+  logs: JourneyLogEntry[]
   earnedTrophies: EarnedTrophy[]
+}
+
+export interface SyncRequest {
+  cursor: number | null
+  full: boolean
+  changes: SyncChanges
+}
+
+export interface SyncAcknowledgements {
+  games: string[]
+  journeys: string[]
+  logs: string[]
+  earnedTrophies: string[]
 }
 
 export interface SyncUser {
@@ -160,15 +261,23 @@ export interface SyncUser {
 
 export interface SyncCapabilities {
   reviewDraft: boolean
-  igdbMetadata?: boolean
 }
 
 export interface SyncConnectionResponse {
+  version?: number
   user: SyncUser
   capabilities: SyncCapabilities
 }
 
-export interface SyncResponse extends SyncSnapshot {
+export interface SyncResponse {
+  cursor: number
+  acknowledged: SyncAcknowledgements
+  changes: SyncChanges
+  totals: {
+    games: number
+    journeys: number
+    logs: number
+  }
   syncedAt: string
 }
 
@@ -202,7 +311,11 @@ export interface GameFormState {
   platform: string
   ownershipType: '' | GameOwnershipType
   tags: string
-  igdbId: string
+  wikidataId: string
+  wikipediaTitle: string
+  coverSourceUrl: string
+  coverSourcePageUrl: string
+  metadataReviewed: boolean
   releaseYear: string
   priority: '' | GamePriority
   developer: string

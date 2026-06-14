@@ -1,11 +1,11 @@
 import type { Game } from '../types'
 
 export function getDisplayDeveloper(game: Game) {
-  return normalizedText(game.developer) || normalizedList(game.igdbDevelopers)
+  return normalizedText(game.developer)
 }
 
 export function getDisplayPublisher(game: Game) {
-  return normalizedText(game.publisher) || normalizedList(game.igdbPublishers)
+  return normalizedText(game.publisher)
 }
 
 export function normalizeReleaseYear(value: string) {
@@ -25,13 +25,4 @@ export function normalizeReleaseYear(value: string) {
 
 function normalizedText(value: string | null | undefined) {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function normalizedList(value: string[] | null | undefined) {
-  return Array.isArray(value)
-    ? value
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .join(', ')
-    : ''
 }

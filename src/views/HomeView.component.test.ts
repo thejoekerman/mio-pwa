@@ -2,7 +2,8 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import HomeView from './HomeView.vue'
-import type { Game } from '../types'
+import type { Game, Journey } from '../types'
+import type { FinishedJourneyEntry } from '../lib/journeyAnalytics'
 import type { Ref } from 'vue'
 
 interface HomeBacklogState {
@@ -12,8 +13,10 @@ interface HomeBacklogState {
   earnedTrophyViews: Ref<unknown[]>
   exportBackup: ReturnType<typeof vi.fn>
   finishedYearOptions: Ref<string[]>
+  finishedJourneyEntries: Ref<FinishedJourneyEntry[]>
   formatDate: ReturnType<typeof vi.fn>
   games: Ref<Game[]>
+  journeys: Ref<Journey[]>
   logDraft: Ref<string>
   logs: Ref<unknown[]>
   recentLogs: Ref<unknown[]>
@@ -23,7 +26,7 @@ interface HomeBacklogState {
   shouldShowBackupReminder: Ref<boolean>
   snoozePausedGame: ReturnType<typeof vi.fn>
   trophyViews: Ref<unknown[]>
-  updateGameStatus: ReturnType<typeof vi.fn>
+  updateCurrentJourneyStatus: ReturnType<typeof vi.fn>
 }
 
 function game(overrides: Partial<Game>): Game {
@@ -36,17 +39,6 @@ function game(overrides: Partial<Game>): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
-    igdbUrl: null,
-    igdbTtbHastilySeconds: null,
-    igdbTtbNormallySeconds: null,
-    igdbTtbCompletelySeconds: null,
-    igdbTtbCount: null,
-    igdbTtbUpdatedAt: null,
-    igdbDevelopers: null,
-    igdbPublishers: null,
-    igdbThemes: null,
-    igdbGameModes: null,
     releaseYear: null,
     priority: null,
     developer: null,
@@ -82,8 +74,10 @@ vi.mock('../composables/useBacklog', async () => {
     earnedTrophyViews: ref([]),
     exportBackup: vi.fn(),
     finishedYearOptions: ref<string[]>([]),
+    finishedJourneyEntries: ref<FinishedJourneyEntry[]>([]),
     formatDate: vi.fn((value: string) => value),
     games: ref<Game[]>([]),
+    journeys: ref<Journey[]>([]),
     logDraft: ref(''),
     logs: ref([]),
     recentLogs: ref([]),
@@ -93,7 +87,7 @@ vi.mock('../composables/useBacklog', async () => {
     shouldShowBackupReminder: ref(false),
     snoozePausedGame: vi.fn(),
     trophyViews: ref([]),
-    updateGameStatus: vi.fn(),
+    updateCurrentJourneyStatus: vi.fn(),
   }
 
   return {

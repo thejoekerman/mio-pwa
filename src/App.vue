@@ -80,7 +80,7 @@ const navItems = computed(() => [
 ])
 
 const settingsOpen = computed(() => route.name === 'settings')
-const journalOpen = computed(() => route.name === 'journal')
+const statsOpen = computed(() => route.name === 'stats')
 const brandHead = computed(() =>
   settings.theme === 'preemNeon' ? '/miolog-head-cyber.svg' : '/miolog-head.svg',
 )
@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
 watch(
   () => route.name,
   () => {
-    if (!['settings', 'journal'].includes(String(route.name)) && typeof route.name === 'string') {
+    if (!['settings', 'stats'].includes(String(route.name)) && typeof route.name === 'string') {
       lastMainRoute.value = {
         name: route.name,
         params: route.params as Record<string, string> | undefined,
@@ -190,8 +190,8 @@ async function toggleSettings() {
   await router.push({ name: 'settings' })
 }
 
-async function toggleJournal() {
-  if (journalOpen.value) {
+async function toggleStats() {
+  if (statsOpen.value) {
     if (lastMainRoute.value) {
       await router.push(lastMainRoute.value)
       return
@@ -201,7 +201,7 @@ async function toggleJournal() {
     return
   }
 
-  await router.push({ name: 'journal' })
+  await router.push({ name: 'stats' })
 }
 
 </script>
@@ -221,10 +221,10 @@ async function toggleJournal() {
         <button
           class="brand-mark"
           type="button"
-          :class="{ active: journalOpen }"
-          :aria-expanded="journalOpen"
-          :aria-label="t('nav.journalLabel')"
-          @click="toggleJournal"
+          :class="{ active: statsOpen }"
+          :aria-expanded="statsOpen"
+          :aria-label="t('nav.statsLabel')"
+          @click="toggleStats"
         >
           <img :src="brandHead" alt="" />
         </button>

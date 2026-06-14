@@ -52,9 +52,12 @@ describe('useSettings', () => {
       expect(settings.syncApiBaseUrl).toBe('')
       expect(settings.syncToken).toBe('')
       expect(settings.autoSyncEnabled).toBe(false)
+      expect(settings.syncApiVersion).toBe(1)
       expect(settings.libraryViewMode).toBe('list')
       expect(settings.backupReminderEnabled).toBe(true)
       expect(settings.aiLocalReviewModel).toBe(DEFAULT_LOCAL_REVIEW_MODEL)
+      expect(settings.playLogShareTemplate).toContain('{log}')
+      expect(settings.playLogShareHashtags).toBe('#games')
     })
 
     it('detects German from navigator.languages', async () => {
@@ -80,6 +83,9 @@ describe('useSettings', () => {
           libraryViewMode: 'shelf',
           backupReminderEnabled: false,
           lastSyncedAt: '2026-05-01T00:00:00.000Z',
+          syncApiVersion: 2,
+          playLogShareTemplate: '{title}: {log}',
+          playLogShareHashtags: '#gaming',
         },
       })
       const { settings } = useSettings()
@@ -92,6 +98,9 @@ describe('useSettings', () => {
       expect(settings.libraryViewMode).toBe('shelf')
       expect(settings.backupReminderEnabled).toBe(false)
       expect(settings.lastSyncedAt).toBe('2026-05-01T00:00:00.000Z')
+      expect(settings.syncApiVersion).toBe(2)
+      expect(settings.playLogShareTemplate).toBe('{title}: {log}')
+      expect(settings.playLogShareHashtags).toBe('#gaming')
     })
 
     it('rejects invalid enum values and falls back to defaults', async () => {
@@ -144,7 +153,7 @@ describe('useSettings', () => {
           autoSyncEnabled: true,
           backupReminderEnabled: true,
           aiReviewDraftAvailable: true,
-          igdbMetadataAvailable: true,
+          syncApiVersion: 2,
         },
       })
       const { settings } = useSettings()
@@ -154,11 +163,27 @@ describe('useSettings', () => {
       expect(settings.autoSyncEnabled).toBe(false)
       expect(settings.backupReminderEnabled).toBe(false)
       expect(settings.aiReviewDraftAvailable).toBe(false)
-      expect(settings.igdbMetadataAvailable).toBe(false)
+      expect(settings.syncApiVersion).toBe(1)
     })
   })
 
   describe('setters and persistence', () => {
+    it('resets the known sync API version when the sync endpoint changes', async () => {
+      const { useSettings } = await loadSettings({
+        stored: {
+          syncApiBaseUrl: 'https://v2.test',
+          syncToken: 'token',
+          syncApiVersion: 2,
+        },
+      })
+      const { settings } = useSettings()
+
+      settings.syncApiBaseUrl = 'https://unknown.test'
+      await nextTick()
+
+      expect(settings.syncApiVersion).toBe(1)
+    })
+
     it('writes back to localStorage on any change', async () => {
       const { useSettings } = await loadSettings()
       const { setLanguage, setLastSyncedAt } = useSettings()
@@ -172,6 +197,19 @@ describe('useSettings', () => {
       const parsed = JSON.parse(raw!) as Record<string, unknown>
       expect(parsed.language).toBe('de')
       expect(parsed.lastSyncedAt).toBe('2026-05-28T00:00:00.000Z')
+    })
+
+    it('saves play log sharing settings and restores the default for a blank template', async () => {
+      const { useSettings } = await loadSettings()
+      const { setPlayLogShareSettings, settings } = useSettings()
+
+      setPlayLogShareSettings('{title}\n{log}', '#games #miolog')
+      expect(settings.playLogShareTemplate).toBe('{title}\n{log}')
+      expect(settings.playLogShareHashtags).toBe('#games #miolog')
+
+      setPlayLogShareSettings('   ', '')
+      expect(settings.playLogShareTemplate).toContain('{log}')
+      expect(settings.playLogShareHashtags).toBe('')
     })
 
     it('sets the documentElement lang and theme on language/theme change', async () => {

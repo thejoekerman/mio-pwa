@@ -726,6 +726,21 @@ pwa-install {
   gap: 18px;
 }
 
+.settings-compact-section {
+  padding-block: 18px;
+}
+
+.settings-compact-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+}
+
+.settings-compact-copy h2 {
+  margin: 0.15rem 0 0.35rem;
+}
+
 .settings-grid {
   display: grid;
   gap: 18px;
@@ -897,6 +912,10 @@ pwa-install {
 
 .confirm-dialog .v-card-title {
   color: var(--text);
+  line-height: 1.3;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .confirm-dialog .v-card-text {
@@ -911,6 +930,54 @@ pwa-install {
 .confirm-dialog .v-btn {
   letter-spacing: 0;
   text-transform: none;
+}
+
+.share-settings-dialog {
+  display: grid;
+  gap: 18px;
+}
+
+.share-preview {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.share-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.share-preview-heading--count {
+  justify-content: end;
+}
+
+.share-preview p {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.share-native-unavailable {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+@media (max-width: 640px) {
+  .settings-compact-copy {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-compact-copy .v-btn {
+    width: 100%;
+  }
 }
 
 .shell {
@@ -1841,6 +1908,44 @@ h3 {
   gap: 20px;
 }
 
+.stats-overview,
+.stats-section {
+  display: grid;
+  gap: 14px;
+}
+
+.stats-overview {
+  gap: 22px;
+}
+
+.stats-section h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.stats-kpi-grid--primary .wrapped-stat {
+  border-color: color-mix(in srgb, var(--accent-strong) 28%, var(--line));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent),
+    rgba(255, 255, 255, 0.03);
+}
+
+.stats-kpi-grid--primary .wrapped-stat dd {
+  color: var(--accent-strong);
+  font-size: 1.45rem;
+}
+
+.stats-kpi-wide {
+  grid-column: span 2;
+}
+
 .trophy-stats-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1987,6 +2092,53 @@ h3 {
   gap: 18px;
 }
 
+.form-section-heading {
+  display: grid;
+  gap: 3px;
+  padding-top: 4px;
+}
+
+.form-section-heading:not(:first-child) {
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.form-section-heading p {
+  margin: 0;
+}
+
+.form-section-heading p:last-child {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.form-section-heading-with-action {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.form-section-heading-with-action > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.metadata-assistant-action {
+  flex: 0 0 auto;
+  padding-block: 0.45rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.metadata-assistant-action:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .form-panel {
   position: relative;
 }
@@ -2106,6 +2258,92 @@ h3 {
 .wikidata-suggestion small {
   color: var(--muted);
   line-height: 1.35;
+}
+
+.metadata-cover-status {
+  margin-top: -4px;
+}
+
+.metadata-review {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.metadata-review p {
+  margin: 3px 0 0;
+}
+
+.metadata-review-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.metadata-review-row input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.metadata-review-row span {
+  display: grid;
+  gap: 2px;
+}
+
+.metadata-review-row small {
+  color: var(--muted);
+}
+
+.metadata-review .mini-button {
+  justify-self: start;
+}
+
+.confirm-dialog .duplicate-game-actions {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 24px 24px;
+}
+
+.confirm-dialog .duplicate-game-actions .v-btn {
+  grid-column: 1;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.metadata-cover-suggestion {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.metadata-cover-suggestion img {
+  width: 76px;
+  aspect-ratio: 3 / 4;
+  border-radius: 9px;
+  object-fit: cover;
+}
+
+.metadata-cover-suggestion div {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.metadata-cover-suggestion small {
+  color: var(--muted);
 }
 
 .section-helper,
@@ -2923,6 +3161,45 @@ textarea:focus {
   align-items: end;
 }
 
+.detail-journey-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  width: fit-content;
+  padding: 0 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.detail-journey-select:hover {
+  border-color: var(--panel-accent-border);
+  background: var(--panel-accent);
+}
+
+.detail-journey-select svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.detail-journey-list {
+  min-width: min(310px, calc(100vw - 32px));
+}
+
+.detail-journey-list .v-list-item-subtitle {
+  color: var(--muted);
+  opacity: 1;
+}
+
 .detail-cover-rail {
   display: grid;
   gap: 12px;
@@ -3029,6 +3306,60 @@ textarea:focus {
 .detail-log-actions .icon-button svg {
   width: 16px;
   height: 16px;
+}
+
+.detail-history-toggle {
+  min-height: 34px;
+  padding: 0 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.detail-history-toggle.active {
+  border-color: var(--panel-accent-border);
+  background: var(--panel-accent);
+  color: var(--accent-strong);
+}
+
+.journey-log-history,
+.journey-log-group {
+  display: grid;
+  gap: 10px;
+}
+
+.journey-log-history {
+  gap: 18px;
+}
+
+.journey-log-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.journey-log-group-heading span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.journey-log-group-heading small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.journey-log-group .log-entry {
+  display: grid;
+  gap: 10px;
 }
 
 .detail-log-title {
@@ -3194,6 +3525,12 @@ textarea:focus {
   gap: 12px;
   align-items: flex-start;
   margin-bottom: 10px;
+}
+
+.log-entry-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .log-entry-meta {

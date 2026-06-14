@@ -5,28 +5,51 @@ import {
   GAME_STATUSES,
   type BackupData,
   type BackupImportMode,
+  type CanonicalGame,
   type EarnedTrophy,
+  type ExternalReference,
   type Game,
+  type GameArtwork,
+  type Journey,
+  type JourneyLogEntry,
   type LogEntry,
-  type SyncSnapshot,
+  type PlaytimeEstimates,
+  type PendingSyncRecord,
+  type SyncAcknowledgements,
+  type SyncChanges,
+  type SyncEntity,
+  type SyncRequest,
+  type SyncResponse,
+  type SyncState,
 } from '../types'
 import { isDemoMode } from './appMode'
 import { demoGames, demoLogs } from './demoData'
+import {
+  initialJourneyIdForGame,
+  migrateLegacyGame,
+  migrateLegacyJourney,
+  migrateLegacyLibrary,
+  type LegacyGame,
+} from './gameJourneyMigration'
+import { getCurrentJourney } from './gameJourneyState'
 
-type StoredGame = Omit<Game, 'ownershipType'> & {
+type StoredGame = Omit<LegacyGame, 'ownershipType'> & {
   notes?: string
   ownershipType?: unknown
 }
 
-const BACKUP_VERSION = 10
+const BACKUP_VERSION = 11
 
-class BacklogDatabase extends Dexie {
-  games!: EntityTable<Game, 'id'>
-  logs!: EntityTable<LogEntry, 'id'>
+export class BacklogDatabase extends Dexie {
+  games!: EntityTable<CanonicalGame, 'id'>
+  journeys!: EntityTable<Journey, 'id'>
+  logs!: EntityTable<JourneyLogEntry, 'id'>
   earnedTrophies!: EntityTable<EarnedTrophy, 'id'>
+  pendingSyncRecords!: EntityTable<PendingSyncRecord, 'key'>
+  syncStates!: EntityTable<SyncState, 'id'>
 
-  constructor() {
-    super(isDemoMode ? 'miolog-demo-backlog' : 'games-backlog')
+  constructor(databaseName = isDemoMode ? 'miolog-demo-backlog' : 'games-backlog') {
+    super(databaseName)
 
     // Keep schema explicit so future migrations stay easy to reason about.
     this.version(1).stores({
@@ -119,10 +142,71 @@ class BacklogDatabase extends Dexie {
       logs: 'id, gameId, createdAt, updatedAt, deletedAt',
       earnedTrophies: 'id, trophyId, earnedAt, updatedAt, deletedAt',
     })
+
+    this.version(7)
+      .stores({
+        games: 'id, updatedAt, title, deletedAt',
+        journeys: 'id, gameId, updatedAt, status, deletedAt',
+        logs: 'id, journeyId, createdAt, updatedAt, deletedAt',
+        earnedTrophies: 'id, trophyId, earnedAt, updatedAt, deletedAt',
+      })
+      .upgrade(async (transaction) => {
+        const legacyGames = (await transaction.table<StoredGame, 'id'>('games').toArray())
+          .map(normalizeStoredGame)
+        const legacyLogs = (await transaction.table<LogEntry, 'id'>('logs').toArray())
+          .map(normalizeStoredLogEntry)
+        const migration = migrateLegacyLibrary(legacyGames, legacyLogs)
+
+        await transaction.table('games').clear()
+        await transaction.table('logs').clear()
+
+        if (migration.games.length > 0) {
+          await transaction.table('games').bulkPut(migration.games)
+          await transaction.table('journeys').bulkPut(migration.journeys)
+        }
+
+        if (migration.logs.length > 0) {
+          await transaction.table('logs').bulkPut(migration.logs)
+        }
+      })
+
+    this.version(8).stores({
+      games: 'id, updatedAt, title, deletedAt',
+      journeys: 'id, gameId, updatedAt, status, deletedAt',
+      logs: 'id, journeyId, createdAt, updatedAt, deletedAt',
+      earnedTrophies: 'id, trophyId, earnedAt, updatedAt, deletedAt',
+      pendingSyncRecords: 'key, entity, id, queuedUpdatedAt',
+      syncStates: 'id, serverIdentity, serverCursor',
+    })
   }
 }
 
 const db = new BacklogDatabase()
+
+function pendingSyncKey(entity: SyncEntity, id: string) {
+  return `${entity}:${id}`
+}
+
+function pendingSyncRecord(
+  entity: SyncEntity,
+  record: { id: string; updatedAt: string },
+): PendingSyncRecord {
+  return {
+    key: pendingSyncKey(entity, record.id),
+    entity,
+    id: record.id,
+    queuedUpdatedAt: record.updatedAt,
+  }
+}
+
+async function queueSyncRecords(
+  entity: SyncEntity,
+  records: { id: string; updatedAt: string }[],
+) {
+  if (records.length > 0) {
+    await db.pendingSyncRecords.bulkPut(records.map((record) => pendingSyncRecord(entity, record)))
+  }
+}
 
 function normalizeStoredGame(game: StoredGame): Game {
   return {
@@ -133,20 +217,6 @@ function normalizeStoredGame(game: StoredGame): Game {
         : null,
     review: game.review ?? game.notes ?? '',
     ownershipType: asNullableOwnershipType(game.ownershipType),
-    igdbId:
-      typeof game.igdbId === 'number' && Number.isInteger(game.igdbId) && game.igdbId > 0
-        ? game.igdbId
-        : null,
-    igdbUrl: typeof game.igdbUrl === 'string' ? game.igdbUrl : null,
-    igdbTtbHastilySeconds: asNullablePositiveInteger(game.igdbTtbHastilySeconds),
-    igdbTtbNormallySeconds: asNullablePositiveInteger(game.igdbTtbNormallySeconds),
-    igdbTtbCompletelySeconds: asNullablePositiveInteger(game.igdbTtbCompletelySeconds),
-    igdbTtbCount: asNullableNonNegativeInteger(game.igdbTtbCount),
-    igdbTtbUpdatedAt: typeof game.igdbTtbUpdatedAt === 'string' ? game.igdbTtbUpdatedAt : null,
-    igdbDevelopers: asNullableStringList(game.igdbDevelopers),
-    igdbPublishers: asNullableStringList(game.igdbPublishers),
-    igdbThemes: asNullableStringList(game.igdbThemes),
-    igdbGameModes: asNullableStringList(game.igdbGameModes),
     releaseYear: asNullableReleaseYear(game.releaseYear),
     priority: asNullablePriority(game.priority),
     developer: asNullableString(game.developer),
@@ -167,22 +237,149 @@ function normalizeStoredLogEntry(logEntry: LogEntry): LogEntry {
   }
 }
 
+function projectGame(game: CanonicalGame, journeys: Journey[], includeDeleted = false): Game | null {
+  const currentJourney = getCurrentJourney(journeys)
+    ?? (includeDeleted ? newestJourneyIncludingDeleted(journeys) : null)
+
+  if (!currentJourney) {
+    return null
+  }
+
+  return {
+    id: game.id,
+    title: game.title,
+    status: currentJourney.status,
+    rating: currentJourney.rating,
+    playTimeHours: currentJourney.playTimeHours,
+    review: currentJourney.review,
+    platform: currentJourney.platform,
+    ownershipType: currentJourney.ownershipType,
+    tags: game.tags,
+    genres: game.genres,
+    themes: game.themes,
+    gameModes: game.gameModes,
+    externalReferences: game.externalReferences,
+    metadataReviewedAt: game.metadataReviewedAt,
+    coverSource: game.cover?.source ?? null,
+    releaseYear: game.releaseYear,
+    priority: currentJourney.priority,
+    developer: game.developers[0] ?? null,
+    publisher: game.publishers[0] ?? null,
+    finishedAt: currentJourney.finishedAt,
+    pausedAt: currentJourney.pausedAt,
+    nudgeAt: currentJourney.nudgeAt,
+    createdAt: game.createdAt,
+    coverUrl: game.cover?.url ?? null,
+    updatedAt:
+      currentJourney.updatedAt > game.updatedAt
+        ? currentJourney.updatedAt
+        : game.updatedAt,
+    deletedAt: game.deletedAt,
+  }
+}
+
+function newestJourneyIncludingDeleted(journeys: Journey[]) {
+  return journeys.reduce<Journey | null>(
+    (newest, journey) => !newest || journey.updatedAt > newest.updatedAt ? journey : newest,
+    null,
+  )
+}
+
+function projectLog(
+  log: JourneyLogEntry,
+  gameIdByJourneyId: ReadonlyMap<string, string>,
+): LogEntry | null {
+  const gameId = gameIdByJourneyId.get(log.journeyId)
+
+  return gameId
+    ? {
+        id: log.id,
+        gameId,
+        content: log.content,
+        createdAt: log.createdAt,
+        updatedAt: log.updatedAt,
+        deletedAt: log.deletedAt,
+      }
+    : null
+}
+
+function projectLegacyGameToCanonical(game: Game, existing?: CanonicalGame): CanonicalGame {
+  const migrated = migrateLegacyGame(game)
+
+  if (!existing) {
+    return {
+      ...migrated,
+      externalReferences: game.externalReferences ?? [],
+      metadataReviewedAt: game.metadataReviewedAt ?? null,
+      cover: game.coverUrl
+        ? { url: game.coverUrl, source: game.coverSource ?? migrated.cover?.source ?? { provider: 'manual', pageUrl: null } }
+        : null,
+    }
+  }
+
+  return {
+    ...existing,
+    title: game.title,
+    releaseYear: game.releaseYear ?? null,
+    developers:
+      game.developer === (existing.developers[0] ?? null)
+        ? existing.developers
+        : migrated.developers,
+    publishers:
+      game.publisher === (existing.publishers[0] ?? null)
+        ? existing.publishers
+        : migrated.publishers,
+    tags: migrated.tags,
+    externalReferences: game.externalReferences ?? existing.externalReferences,
+    metadataReviewedAt: game.metadataReviewedAt ?? existing.metadataReviewedAt,
+    cover:
+      game.coverUrl === (existing.cover?.url ?? null)
+        ? existing.cover
+        : game.coverUrl
+          ? { url: game.coverUrl, source: game.coverSource ?? { provider: 'manual', pageUrl: null } }
+          : null,
+    updatedAt: game.updatedAt,
+    deletedAt: game.deletedAt,
+  }
+}
+
+function projectLegacyGameToJourney(game: Game, existing?: Journey | null): Journey {
+  return {
+    ...migrateLegacyJourney(game),
+    id: existing?.id ?? initialJourneyIdForGame(game.id),
+    startedAt: existing?.startedAt ?? null,
+    createdAt: existing?.createdAt ?? game.createdAt,
+  }
+}
+
 export async function getAllGames(includeDeleted = false) {
-  const games = (await db.games.orderBy('updatedAt').reverse().toArray()) as StoredGame[]
-  const normalizedGames = games.map(normalizeStoredGame)
+  const [games, journeys] = await Promise.all([
+    db.games.orderBy('updatedAt').reverse().toArray(),
+    db.journeys.toArray(),
+  ])
+  const projectedGames = games
+    .map((game) => projectGame(
+      game,
+      journeys.filter((journey) => journey.gameId === game.id),
+      includeDeleted,
+    ))
+    .filter((game): game is Game => game !== null)
 
   return includeDeleted
-    ? normalizedGames
-    : normalizedGames.filter((game) => game.deletedAt === null)
+    ? projectedGames
+    : projectedGames.filter((game) => game.deletedAt === null)
 }
 
 export async function getAllLogs(includeDeleted = false) {
-  const logs = await db.logs.toArray()
-  const normalizedLogs = logs.map(normalizeStoredLogEntry)
+  const [logs, journeys] = await Promise.all([db.logs.toArray(), db.journeys.toArray()])
+  const gameIdByJourneyId = new Map(journeys.map((journey) => [journey.id, journey.gameId]))
+  const projectedLogs = logs
+    .map((log) => projectLog(log, gameIdByJourneyId))
+    .filter((log): log is LogEntry => log !== null)
 
   return includeDeleted
-    ? normalizedLogs
-    : normalizedLogs.filter((logEntry) => logEntry.deletedAt === null)
+    ? projectedLogs
+    : projectedLogs.filter((logEntry) => logEntry.deletedAt === null)
 }
 
 export async function getAllEarnedTrophies(includeDeleted = false) {
@@ -195,11 +392,32 @@ export async function getAllEarnedTrophies(includeDeleted = false) {
 }
 
 export async function saveGame(game: Game) {
-  await db.games.put(game)
+  await db.transaction('rw', db.games, db.journeys, db.pendingSyncRecords, async () => {
+    const existingGame = await db.games.get(game.id)
+    const existingJourneys = await db.journeys.where('gameId').equals(game.id).toArray()
+    const currentJourney = getCurrentJourney(existingJourneys)
+    const canonicalGame = projectLegacyGameToCanonical(game, existingGame)
+    const journey = projectLegacyGameToJourney(game, currentJourney)
+
+    await db.games.put(canonicalGame)
+    await db.journeys.put(journey)
+    await queueSyncRecords('game', [canonicalGame])
+    await queueSyncRecords('journey', [journey])
+  })
+}
+
+export async function saveGameMetadata(game: Game) {
+  await db.transaction('rw', db.games, db.pendingSyncRecords, async () => {
+    const existingGame = await db.games.get(game.id)
+    const canonicalGame = projectLegacyGameToCanonical(game, existingGame)
+
+    await db.games.put(canonicalGame)
+    await queueSyncRecords('game', [canonicalGame])
+  })
 }
 
 export async function deleteGame(gameId: string) {
-  await db.transaction('rw', db.games, db.logs, async () => {
+  await db.transaction('rw', db.games, db.journeys, db.logs, db.pendingSyncRecords, async () => {
     const now = new Date().toISOString()
     const game = await db.games.get(gameId)
 
@@ -207,37 +425,149 @@ export async function deleteGame(gameId: string) {
       return
     }
 
-    await db.games.put({
-      ...normalizeStoredGame(game as StoredGame),
+    const deletedGame = {
+      ...game,
       updatedAt: now,
       deletedAt: now,
-    })
+    }
+    await db.games.put(deletedGame)
+    await queueSyncRecords('game', [deletedGame])
 
-    const logs = await db.logs.where('gameId').equals(gameId).toArray()
+    const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
+    const journeyIds = journeys.map((journey) => journey.id)
+    const deletedJourneys = journeys.map((journey) => ({
+      ...journey,
+      updatedAt: now,
+      deletedAt: now,
+    }))
 
-    if (logs.length > 0) {
-      await db.logs.bulkPut(
-        logs.map((logEntry) => ({
-          ...normalizeStoredLogEntry(logEntry),
-          updatedAt: now,
-          deletedAt: now,
-        })),
-      )
+    if (deletedJourneys.length > 0) {
+      await db.journeys.bulkPut(deletedJourneys)
+      await queueSyncRecords('journey', deletedJourneys)
+    }
+
+    for (const journeyId of journeyIds) {
+      const logs = await db.logs.where('journeyId').equals(journeyId).toArray()
+      const deletedLogs = logs.map((logEntry) => ({
+        ...logEntry,
+        updatedAt: now,
+        deletedAt: now,
+      }))
+
+      if (deletedLogs.length > 0) {
+        await db.logs.bulkPut(deletedLogs)
+        await queueSyncRecords('log', deletedLogs)
+      }
     }
   })
 }
 
+export async function deleteJourney(journeyId: string) {
+  return db.transaction('rw', db.journeys, db.logs, db.pendingSyncRecords, async () => {
+    const now = new Date().toISOString()
+    const journey = await db.journeys.get(journeyId)
+
+    if (!journey || journey.deletedAt !== null) {
+      return false
+    }
+
+    const visibleJourneys = await db.journeys.where('gameId').equals(journey.gameId).toArray()
+    if (visibleJourneys.filter((candidate) => candidate.deletedAt === null).length <= 1) {
+      return false
+    }
+
+    const deletedJourney = { ...journey, updatedAt: now, deletedAt: now }
+    await db.journeys.put(deletedJourney)
+    await queueSyncRecords('journey', [deletedJourney])
+
+    const logs = await db.logs.where('journeyId').equals(journeyId).toArray()
+    const deletedLogs = logs.map((logEntry) => ({ ...logEntry, updatedAt: now, deletedAt: now }))
+    if (deletedLogs.length > 0) {
+      await db.logs.bulkPut(deletedLogs)
+      await queueSyncRecords('log', deletedLogs)
+    }
+
+    return true
+  })
+}
+
 export async function getLogsForGame(gameId: string) {
-  const logs = await db.logs.where('gameId').equals(gameId).sortBy('createdAt')
+  const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
+  const journeyIds = new Set(journeys.map((journey) => journey.id))
+  const logs = (await db.logs.toArray())
+    .filter((log) => journeyIds.has(log.journeyId))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 
   return logs
-    .map(normalizeStoredLogEntry)
+    .map((log) => projectLog(log, new Map(journeys.map((journey) => [journey.id, journey.gameId]))))
+    .filter((log): log is LogEntry => log !== null)
     .filter((logEntry) => logEntry.deletedAt === null)
     .reverse()
 }
 
+export async function getLogsForJourney(journeyId: string) {
+  const journey = await db.journeys.get(journeyId)
+
+  if (!journey) {
+    return []
+  }
+
+  const logs = await db.logs.where('journeyId').equals(journeyId).sortBy('createdAt')
+
+  return logs
+    .filter((logEntry) => logEntry.deletedAt === null)
+    .map((logEntry) => ({
+      id: logEntry.id,
+      gameId: journey.gameId,
+      content: logEntry.content,
+      createdAt: logEntry.createdAt,
+      updatedAt: logEntry.updatedAt,
+      deletedAt: logEntry.deletedAt,
+    }))
+    .reverse()
+}
+
 export async function saveLogEntry(logEntry: LogEntry) {
-  await db.logs.put(logEntry)
+  const journeys = await db.journeys.where('gameId').equals(logEntry.gameId).toArray()
+  const currentJourney = getCurrentJourney(journeys)
+
+  if (!currentJourney) {
+    throw new Error(`Cannot save log "${logEntry.id}" without a Journey for game "${logEntry.gameId}".`)
+  }
+
+  const journeyLog = {
+    id: logEntry.id,
+    journeyId: currentJourney.id,
+    content: logEntry.content,
+    createdAt: logEntry.createdAt,
+    updatedAt: logEntry.updatedAt,
+    deletedAt: logEntry.deletedAt,
+  }
+  await db.transaction('rw', db.logs, db.pendingSyncRecords, async () => {
+    await db.logs.put(journeyLog)
+    await queueSyncRecords('log', [journeyLog])
+  })
+}
+
+export async function saveLogEntryForJourney(logEntry: LogEntry, journeyId: string) {
+  const journey = await db.journeys.get(journeyId)
+
+  if (!journey || journey.gameId !== logEntry.gameId) {
+    throw new Error(`Cannot save log "${logEntry.id}" without matching Journey "${journeyId}".`)
+  }
+
+  const journeyLog = {
+    id: logEntry.id,
+    journeyId,
+    content: logEntry.content,
+    createdAt: logEntry.createdAt,
+    updatedAt: logEntry.updatedAt,
+    deletedAt: logEntry.deletedAt,
+  }
+  await db.transaction('rw', db.logs, db.pendingSyncRecords, async () => {
+    await db.logs.put(journeyLog)
+    await queueSyncRecords('log', [journeyLog])
+  })
 }
 
 export async function saveEarnedTrophies(earnedTrophies: EarnedTrophy[]) {
@@ -245,7 +575,10 @@ export async function saveEarnedTrophies(earnedTrophies: EarnedTrophy[]) {
     return
   }
 
-  await db.earnedTrophies.bulkPut(earnedTrophies)
+  await db.transaction('rw', db.earnedTrophies, db.pendingSyncRecords, async () => {
+    await db.earnedTrophies.bulkPut(earnedTrophies)
+    await queueSyncRecords('earnedTrophy', earnedTrophies)
+  })
 }
 
 export async function ensureDemoData() {
@@ -267,12 +600,15 @@ export async function resetDemoData() {
     return
   }
 
-  await db.transaction('rw', db.games, db.logs, db.earnedTrophies, async () => {
+  await db.transaction('rw', db.games, db.journeys, db.logs, db.earnedTrophies, async () => {
     await db.games.clear()
+    await db.journeys.clear()
     await db.logs.clear()
     await db.earnedTrophies.clear()
-    await db.games.bulkPut(demoGames)
-    await db.logs.bulkPut(demoLogs)
+    const migration = migrateLegacyLibrary(demoGames, demoLogs)
+    await db.games.bulkPut(migration.games)
+    await db.journeys.bulkPut(migration.journeys)
+    await db.logs.bulkPut(migration.logs)
   })
 }
 
@@ -293,16 +629,23 @@ function asNullableRating(value: unknown) {
     : null
 }
 
-function asNullablePositiveInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
-}
-
-function asNullableNonNegativeInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
-}
-
 function asNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+function asNullableStringList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  return [
+    ...new Set(
+      value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ]
 }
 
 function asNullablePriority(value: unknown) {
@@ -326,21 +669,6 @@ function asNullableOwnershipType(value: unknown): Game['ownershipType'] {
   return GAME_OWNERSHIP_TYPES.includes(value as (typeof GAME_OWNERSHIP_TYPES)[number])
     ? value as Game['ownershipType']
     : null
-}
-
-function asNullableStringList(value: unknown) {
-  if (!Array.isArray(value)) {
-    return null
-  }
-
-  return [
-    ...new Set(
-      value
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item !== ''),
-    ),
-  ]
 }
 
 export function normalizeGame(value: unknown): Game {
@@ -367,20 +695,6 @@ export function normalizeGame(value: unknown): Game {
     platform: asString(value.platform),
     ownershipType: asNullableOwnershipType(value.ownershipType),
     tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === 'string') : [],
-    igdbId:
-      typeof value.igdbId === 'number' && Number.isInteger(value.igdbId) && value.igdbId > 0
-        ? value.igdbId
-        : null,
-    igdbUrl: typeof value.igdbUrl === 'string' ? value.igdbUrl : null,
-    igdbTtbHastilySeconds: asNullablePositiveInteger(value.igdbTtbHastilySeconds),
-    igdbTtbNormallySeconds: asNullablePositiveInteger(value.igdbTtbNormallySeconds),
-    igdbTtbCompletelySeconds: asNullablePositiveInteger(value.igdbTtbCompletelySeconds),
-    igdbTtbCount: asNullableNonNegativeInteger(value.igdbTtbCount),
-    igdbTtbUpdatedAt: typeof value.igdbTtbUpdatedAt === 'string' ? value.igdbTtbUpdatedAt : null,
-    igdbDevelopers: asNullableStringList(value.igdbDevelopers),
-    igdbPublishers: asNullableStringList(value.igdbPublishers),
-    igdbThemes: asNullableStringList(value.igdbThemes),
-    igdbGameModes: asNullableStringList(value.igdbGameModes),
     releaseYear: asNullableReleaseYear(value.releaseYear),
     priority: asNullablePriority(value.priority),
     developer: asNullableString(value.developer),
@@ -434,15 +748,194 @@ function dedupeById<T extends { id: string }>(items: T[]) {
   return [...new Map(items.map((item) => [item.id, item])).values()]
 }
 
+function normalizeCanonicalGame(value: unknown): CanonicalGame {
+  if (!isRecord(value)) {
+    throw new Error('Backup contains an invalid canonical game entry.')
+  }
+
+  return {
+    id: asString(value.id),
+    title: asString(value.title),
+    releaseYear: asNullableReleaseYear(value.releaseYear),
+    developers: asNullableStringList(value.developers) ?? [],
+    publishers: asNullableStringList(value.publishers) ?? [],
+    genres: asNullableStringList(value.genres) ?? [],
+    themes: asNullableStringList(value.themes) ?? [],
+    gameModes: asNullableStringList(value.gameModes) ?? [],
+    tags: asNullableStringList(value.tags) ?? [],
+    cover: normalizeArtwork(value.cover),
+    externalReferences: normalizeExternalReferences(value.externalReferences),
+    playtimeEstimates: normalizePlaytimeEstimates(value.playtimeEstimates),
+    metadataReviewedAt: typeof value.metadataReviewedAt === 'string' ? value.metadataReviewedAt : null,
+    createdAt: asString(value.createdAt),
+    updatedAt: asString(value.updatedAt),
+    deletedAt: typeof value.deletedAt === 'string' ? value.deletedAt : null,
+  }
+}
+
+function normalizeJourney(value: unknown): Journey {
+  if (!isRecord(value)) {
+    throw new Error('Backup contains an invalid journey entry.')
+  }
+
+  const status = asString(value.status, 'backlog')
+
+  if (!GAME_STATUSES.includes(status as Journey['status'])) {
+    throw new Error(`Backup contains an invalid journey status: ${status}`)
+  }
+
+  return {
+    id: asString(value.id),
+    gameId: asString(value.gameId),
+    status: status as Journey['status'],
+    platform: asString(value.platform),
+    ownershipType: asNullableOwnershipType(value.ownershipType),
+    priority: asNullablePriority(value.priority),
+    rating: asNullableRating(value.rating),
+    review: asString(value.review),
+    playTimeHours:
+      typeof value.playTimeHours === 'number' && Number.isFinite(value.playTimeHours)
+        ? value.playTimeHours
+        : null,
+    startedAt: typeof value.startedAt === 'string' ? value.startedAt : null,
+    finishedAt: typeof value.finishedAt === 'string' ? value.finishedAt : null,
+    pausedAt: typeof value.pausedAt === 'string' ? value.pausedAt : null,
+    nudgeAt: typeof value.nudgeAt === 'string' ? value.nudgeAt : null,
+    createdAt: asString(value.createdAt),
+    updatedAt: asString(value.updatedAt),
+    deletedAt: typeof value.deletedAt === 'string' ? value.deletedAt : null,
+  }
+}
+
+function normalizeJourneyLogEntry(value: unknown): JourneyLogEntry {
+  if (!isRecord(value)) {
+    throw new Error('Backup contains an invalid journey log entry.')
+  }
+
+  return {
+    id: asString(value.id),
+    journeyId: asString(value.journeyId),
+    content: asString(value.content),
+    createdAt: asString(value.createdAt),
+    updatedAt: asString(value.updatedAt, asString(value.createdAt)),
+    deletedAt: typeof value.deletedAt === 'string' ? value.deletedAt : null,
+  }
+}
+
+function normalizeArtwork(value: unknown): GameArtwork | null {
+  if (!isRecord(value) || typeof value.url !== 'string' || !isRecord(value.source)) {
+    return null
+  }
+
+  const provider = value.source.provider
+
+  if (!['wikidata', 'wikipedia', 'howlongtobeat', 'manual'].includes(String(provider))) {
+    return null
+  }
+
+  return {
+    url: value.url,
+    source: {
+      provider: provider as GameArtwork['source']['provider'],
+      pageUrl: typeof value.source.pageUrl === 'string' ? value.source.pageUrl : null,
+    },
+  }
+}
+
+function normalizeExternalReferences(value: unknown): ExternalReference[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((reference) => {
+    if (!isRecord(reference)) {
+      return []
+    }
+
+    const provider = String(reference.provider)
+
+    if (!['wikidata', 'wikipedia', 'howlongtobeat'].includes(provider)) {
+      return []
+    }
+
+    return [{
+      provider: provider as ExternalReference['provider'],
+      externalId: asString(reference.externalId),
+      url: typeof reference.url === 'string' ? reference.url : null,
+    }]
+  })
+}
+
+function normalizePlaytimeEstimates(value: unknown): PlaytimeEstimates | null {
+  if (!isRecord(value) || value.source !== 'howlongtobeat') {
+    return null
+  }
+
+  const asHours = (hours: unknown) =>
+    typeof hours === 'number' && Number.isFinite(hours) && hours >= 0 ? hours : null
+
+  return {
+    mainStoryHours: asHours(value.mainStoryHours),
+    mainExtrasHours: asHours(value.mainExtrasHours),
+    completionistHours: asHours(value.completionistHours),
+    source: 'howlongtobeat',
+    refreshedAt: asString(value.refreshedAt),
+  }
+}
+
+export async function getAllCanonicalGames(includeDeleted = false) {
+  const games = await db.games.orderBy('updatedAt').reverse().toArray()
+
+  return includeDeleted ? games : games.filter((game) => game.deletedAt === null)
+}
+
+export async function getAllJourneys(includeDeleted = false) {
+  const journeys = await db.journeys.orderBy('updatedAt').reverse().toArray()
+
+  return includeDeleted ? journeys : journeys.filter((journey) => journey.deletedAt === null)
+}
+
+export async function getJourneysForGame(gameId: string, includeDeleted = false) {
+  const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
+  const sortedJourneys = journeys.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+
+  return includeDeleted
+    ? sortedJourneys
+    : sortedJourneys.filter((journey) => journey.deletedAt === null)
+}
+
+export async function saveJourney(journey: Journey) {
+  await db.transaction('rw', db.games, db.journeys, db.pendingSyncRecords, async () => {
+    const game = await db.games.get(journey.gameId)
+
+    if (!game) {
+      throw new Error(`Cannot save Journey "${journey.id}" without Game "${journey.gameId}".`)
+    }
+
+    await db.journeys.put(journey)
+    await queueSyncRecords('journey', [journey])
+  })
+}
+
+export async function getAllJourneyLogs(includeDeleted = false) {
+  const logs = await db.logs.toArray()
+
+  return includeDeleted ? logs : logs.filter((log) => log.deletedAt === null)
+}
+
 export async function createBackupData(): Promise<BackupData> {
-  const games = await getAllGames()
-  const logs = await getAllLogs()
-  const earnedTrophies = await getAllEarnedTrophies()
+  const [games, journeys, logs, earnedTrophies] = await Promise.all([
+    getAllCanonicalGames(),
+    getAllJourneys(),
+    getAllJourneyLogs(),
+    getAllEarnedTrophies(),
+  ])
 
   return {
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     games,
+    journeys,
     logs,
     earnedTrophies,
   }
@@ -456,39 +949,75 @@ export async function importBackupData(
     throw new Error('Backup file is not a valid object.')
   }
 
-  const games = Array.isArray(payload.games) ? payload.games.map(normalizeGame) : null
-  const logs = Array.isArray(payload.logs) ? payload.logs.map(normalizeLogEntry) : null
   const earnedTrophies = Array.isArray(payload.earnedTrophies)
     ? payload.earnedTrophies.map(normalizeEarnedTrophy)
     : []
+  const isCanonicalBackup = Array.isArray(payload.journeys)
+  let games: CanonicalGame[] | null = null
+  let journeys: Journey[] | null = null
+  let logs: JourneyLogEntry[] | null = null
 
-  if (!games || !logs) {
+  if (isCanonicalBackup) {
+    games = Array.isArray(payload.games) ? payload.games.map(normalizeCanonicalGame) : null
+    journeys = (payload.journeys as unknown[]).map(normalizeJourney)
+    logs = Array.isArray(payload.logs) ? payload.logs.map(normalizeJourneyLogEntry) : null
+  } else {
+    const legacyGames = Array.isArray(payload.games) ? payload.games.map(normalizeGame) : null
+    const legacyLogs = Array.isArray(payload.logs) ? payload.logs.map(normalizeLogEntry) : null
+
+    if (legacyGames && legacyLogs) {
+      const migration = migrateLegacyLibrary(legacyGames, legacyLogs)
+      games = migration.games
+      journeys = migration.journeys
+      logs = migration.logs
+    }
+  }
+
+  if (!games || !journeys || !logs) {
     throw new Error('Backup file is missing games or logs.')
   }
 
   const normalizedGames = dedupeById(games)
+  const normalizedJourneys = dedupeById(journeys)
   const normalizedLogs = dedupeById(logs)
   const normalizedEarnedTrophies = dedupeById(earnedTrophies)
+  validateEntityOwnership(normalizedGames, normalizedJourneys, normalizedLogs)
 
-  await db.transaction('rw', db.games, db.logs, db.earnedTrophies, async () => {
-    if (mode === 'replace') {
-      await db.games.clear()
-      await db.logs.clear()
-      await db.earnedTrophies.clear()
-    }
+  await db.transaction(
+    'rw',
+    [db.games, db.journeys, db.logs, db.earnedTrophies, db.pendingSyncRecords, db.syncStates],
+    async () => {
+      if (mode === 'replace') {
+        await db.games.clear()
+        await db.journeys.clear()
+        await db.logs.clear()
+        await db.earnedTrophies.clear()
+        await db.pendingSyncRecords.clear()
+        await db.syncStates.clear()
+      }
 
-    if (normalizedGames.length > 0) {
-      await db.games.bulkPut(normalizedGames)
-    }
+      if (normalizedGames.length > 0) {
+        await db.games.bulkPut(normalizedGames)
+      }
 
-    if (normalizedLogs.length > 0) {
-      await db.logs.bulkPut(normalizedLogs)
-    }
+      if (normalizedJourneys.length > 0) {
+        await db.journeys.bulkPut(normalizedJourneys)
+      }
 
-    if (normalizedEarnedTrophies.length > 0) {
-      await db.earnedTrophies.bulkPut(normalizedEarnedTrophies)
-    }
-  })
+      if (normalizedLogs.length > 0) {
+        await db.logs.bulkPut(normalizedLogs)
+      }
+
+      if (normalizedEarnedTrophies.length > 0) {
+        await db.earnedTrophies.bulkPut(normalizedEarnedTrophies)
+      }
+
+      await queueSyncRecords('game', normalizedGames)
+      await queueSyncRecords('journey', normalizedJourneys)
+      await queueSyncRecords('log', normalizedLogs)
+      await queueSyncRecords('earnedTrophy', normalizedEarnedTrophies)
+    },
+  )
 
   return {
     games: normalizedGames.length,
@@ -497,58 +1026,159 @@ export async function importBackupData(
   }
 }
 
-export async function createSyncSnapshot(): Promise<SyncSnapshot> {
-  return {
-    games: await getAllGames(true),
-    logs: await getAllLogs(true),
-    earnedTrophies: await getAllEarnedTrophies(true),
+function validateEntityOwnership(
+  games: CanonicalGame[],
+  journeys: Journey[],
+  logs: JourneyLogEntry[],
+) {
+  const gameIds = new Set(games.map((game) => game.id))
+  const journeyIds = new Set(journeys.map((journey) => journey.id))
+  const orphanedJourney = journeys.find((journey) => !gameIds.has(journey.gameId))
+  const orphanedLog = logs.find((log) => !journeyIds.has(log.journeyId))
+
+  if (orphanedJourney) {
+    throw new Error(`Backup Journey "${orphanedJourney.id}" has no matching Game.`)
+  }
+
+  if (orphanedLog) {
+    throw new Error(`Backup Log "${orphanedLog.id}" has no matching Journey.`)
   }
 }
 
-export async function replaceWithSyncSnapshot(snapshot: SyncSnapshot) {
-  const existingGames = await getAllGames(true)
-  const localMetadataByGameId = new Map(
-    existingGames.map((game) => [
-      game.id,
-      {
-        developer: game.developer ?? null,
-        publisher: game.publisher ?? null,
-        releaseYear: game.releaseYear ?? null,
-        priority: game.priority ?? null,
-      },
-    ]),
-  )
+const emptySyncChanges = (): SyncChanges => ({
+  games: [],
+  journeys: [],
+  logs: [],
+  earnedTrophies: [],
+})
 
-  await db.transaction('rw', db.games, db.logs, db.earnedTrophies, async () => {
-    await db.games.clear()
-    await db.logs.clear()
-    await db.earnedTrophies.clear()
+function pendingRecordsForChanges(changes: SyncChanges) {
+  return [
+    ...changes.games.map((record) => pendingSyncRecord('game', record)),
+    ...changes.journeys.map((record) => pendingSyncRecord('journey', record)),
+    ...changes.logs.map((record) => pendingSyncRecord('log', record)),
+    ...changes.earnedTrophies.map((record) => pendingSyncRecord('earnedTrophy', record)),
+  ]
+}
 
-    if (snapshot.games.length > 0) {
-      await db.games.bulkPut(
-        snapshot.games.map((game) => {
-          const normalizedGame = normalizeGame(game)
-          const localMetadata = localMetadataByGameId.get(normalizedGame.id)
+async function getFullSyncChanges(): Promise<SyncChanges> {
+  const [games, journeys, logs, earnedTrophies] = await Promise.all([
+    getAllCanonicalGames(true),
+    getAllJourneys(true),
+    getAllJourneyLogs(true),
+    getAllEarnedTrophies(true),
+  ])
 
-          return localMetadata
-            ? {
-                ...normalizedGame,
-                developer: normalizedGame.developer ?? localMetadata.developer,
-                publisher: normalizedGame.publisher ?? localMetadata.publisher,
-                releaseYear: normalizedGame.releaseYear ?? localMetadata.releaseYear,
-                priority: normalizedGame.priority ?? localMetadata.priority,
-              }
-            : normalizedGame
-        }),
+  return { games, journeys, logs, earnedTrophies }
+}
+
+async function getPendingSyncChanges(pending: PendingSyncRecord[]): Promise<SyncChanges> {
+  const changes = emptySyncChanges()
+
+  for (const record of pending) {
+    if (record.entity === 'game') {
+      const game = await db.games.get(record.id)
+      if (game) changes.games.push(game)
+    } else if (record.entity === 'journey') {
+      const journey = await db.journeys.get(record.id)
+      if (journey) changes.journeys.push(journey)
+    } else if (record.entity === 'log') {
+      const log = await db.logs.get(record.id)
+      if (log) changes.logs.push(log)
+    } else {
+      const trophy = await db.earnedTrophies.get(record.id)
+      if (trophy) changes.earnedTrophies.push(trophy)
+    }
+  }
+
+  return changes
+}
+
+export async function createSyncRequest(serverIdentity: string): Promise<{
+  request: SyncRequest
+  submitted: PendingSyncRecord[]
+}> {
+  const [state, pending] = await Promise.all([
+    db.syncStates.get('active'),
+    db.pendingSyncRecords.toArray(),
+  ])
+  const full = !state || state.serverIdentity !== serverIdentity
+  const changes = full ? await getFullSyncChanges() : await getPendingSyncChanges(pending)
+
+  return {
+    request: {
+      cursor: full ? null : state.serverCursor,
+      full,
+      changes,
+    },
+    submitted: pendingRecordsForChanges(changes),
+  }
+}
+
+async function recordsWonByServer<T extends { id: string; updatedAt: string }>(
+  records: T[],
+  getExisting: (id: string) => Promise<T | undefined>,
+) {
+  const winners: T[] = []
+
+  for (const record of records) {
+    const existing = await getExisting(record.id)
+    if (!existing || existing.updatedAt <= record.updatedAt) {
+      winners.push(record)
+    }
+  }
+
+  return winners
+}
+
+function acknowledgedKeys(
+  submitted: PendingSyncRecord[],
+  acknowledgements: SyncAcknowledgements,
+) {
+  const acknowledgedIds = {
+    game: new Set(acknowledgements.games),
+    journey: new Set(acknowledgements.journeys),
+    log: new Set(acknowledgements.logs),
+    earnedTrophy: new Set(acknowledgements.earnedTrophies),
+  }
+
+  return submitted.filter((record) => acknowledgedIds[record.entity].has(record.id))
+}
+
+export async function applySyncResponse(
+  serverIdentity: string,
+  submitted: PendingSyncRecord[],
+  response: SyncResponse,
+) {
+  await db.transaction(
+    'rw',
+    [db.games, db.journeys, db.logs, db.earnedTrophies, db.pendingSyncRecords, db.syncStates],
+    async () => {
+      const games = await recordsWonByServer(response.changes.games, (id) => db.games.get(id))
+      const journeys = await recordsWonByServer(response.changes.journeys, (id) => db.journeys.get(id))
+      const logs = await recordsWonByServer(response.changes.logs, (id) => db.logs.get(id))
+      const earnedTrophies = await recordsWonByServer(
+        response.changes.earnedTrophies,
+        (id) => db.earnedTrophies.get(id),
       )
-    }
 
-    if (snapshot.logs.length > 0) {
-      await db.logs.bulkPut(snapshot.logs.map(normalizeLogEntry))
-    }
+      await db.games.bulkPut(games)
+      await db.journeys.bulkPut(journeys)
+      await db.logs.bulkPut(logs)
+      await db.earnedTrophies.bulkPut(earnedTrophies)
 
-    if (snapshot.earnedTrophies.length > 0) {
-      await db.earnedTrophies.bulkPut(snapshot.earnedTrophies.map(normalizeEarnedTrophy))
-    }
-  })
+      for (const acknowledged of acknowledgedKeys(submitted, response.acknowledged)) {
+        const pending = await db.pendingSyncRecords.get(acknowledged.key)
+        if (pending?.queuedUpdatedAt === acknowledged.queuedUpdatedAt) {
+          await db.pendingSyncRecords.delete(acknowledged.key)
+        }
+      }
+
+      await db.syncStates.put({
+        id: 'active',
+        serverIdentity,
+        serverCursor: response.cursor,
+      })
+    },
+  )
 }

@@ -1,31 +1,31 @@
 import type { Ref } from 'vue'
 import { saveEarnedTrophies } from '../lib/backlogDb'
 import { evaluateTrophies } from '../lib/trophies'
-import type { EarnedTrophy, Game, LogEntry, TrophyUnlockSource } from '../types'
+import type { EarnedTrophy, Game, Journey, LogEntry, TrophyUnlockSource } from '../types'
 
 interface TrophyDeps {
   games: Ref<Game[]>
+  journeys: Ref<Journey[]>
   allLogs: Ref<LogEntry[]>
   earnedTrophies: Ref<EarnedTrophy[]>
   trophyUnlockQueue: Ref<EarnedTrophy[]>
   latestTrophyUnlockSource: Ref<TrophyUnlockSource | null>
-  markLocalChange: () => void
   scheduleAutoSync: () => void
 }
 
 export function createTrophyHandlers(deps: TrophyDeps) {
   const {
     games,
+    journeys,
     allLogs,
     earnedTrophies,
     trophyUnlockQueue,
     latestTrophyUnlockSource,
-    markLocalChange,
     scheduleAutoSync,
   } = deps
 
   async function unlockEarnedTrophies(source: TrophyUnlockSource) {
-    const newlyEarned = evaluateTrophies(games.value, allLogs.value, earnedTrophies.value)
+    const newlyEarned = evaluateTrophies(games.value, journeys.value, allLogs.value, earnedTrophies.value)
 
     if (newlyEarned.length === 0) {
       return []
@@ -35,7 +35,6 @@ export function createTrophyHandlers(deps: TrophyDeps) {
     earnedTrophies.value = [...earnedTrophies.value, ...newlyEarned]
     trophyUnlockQueue.value = [...trophyUnlockQueue.value, ...newlyEarned]
     latestTrophyUnlockSource.value = source
-    markLocalChange()
     scheduleAutoSync()
 
     return newlyEarned

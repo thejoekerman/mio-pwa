@@ -1,12 +1,12 @@
 import type { Ref } from 'vue'
-import { createSyncSnapshot, replaceWithSyncSnapshot } from '../lib/backlogDb'
+import { applySyncResponse, createSyncRequest } from '../lib/backlogDb'
 import { syncWithBackend, testSyncConnection as requestSyncConnection } from '../lib/syncApi'
 import { translate } from '../i18n'
 import { getSyncErrorMessage } from '../lib/syncUtils'
 import { isDemoMode } from '../lib/appMode'
 import { isOnline } from '../lib/network'
 import type { AppSettingsState } from './useSettings'
-import type { EarnedTrophy, FeedbackState, Game, GameFormState, SyncSnapshot, TrophyUnlockSource } from '../types'
+import type { EarnedTrophy, FeedbackState, Game, GameFormState, TrophyUnlockSource } from '../types'
 
 interface SyncDeps {
   games: Ref<Game[]>
@@ -16,7 +16,6 @@ interface SyncDeps {
   isTestingSyncConnection: Ref<boolean>
   autoSyncStarted: Ref<boolean>
   capabilityRefreshStarted: Ref<boolean>
-  localChangeRevision: Ref<number>
   settings: AppSettingsState
   ensureLoaded: (force?: boolean) => Promise<void>
   loadLogs: (gameId: string | null) => Promise<void>
@@ -25,24 +24,13 @@ interface SyncDeps {
   resetForm: () => void
   setFeedback: (message: string, tone?: FeedbackState['tone']) => void
   setAiReviewDraftAvailable: (value: boolean) => void
-  setIgdbMetadataAvailable: (value: boolean) => void
+  setSyncApiVersion: (value: number) => void
   setLastSyncedAt: (value: string | null) => void
   setLastSyncError: (value: string | null) => void
 }
 
-function snapshotSignature(records: { id: string; updatedAt: string }[]): string {
-  return records
-    .map((record) => `${record.id}@${record.updatedAt}`)
-    .sort()
-    .join('|')
-}
-
-function snapshotsMatch(local: SyncSnapshot, remote: SyncSnapshot): boolean {
-  return (
-    snapshotSignature(local.games) === snapshotSignature(remote.games) &&
-    snapshotSignature(local.logs) === snapshotSignature(remote.logs) &&
-    snapshotSignature(local.earnedTrophies) === snapshotSignature(remote.earnedTrophies)
-  )
+function syncServerIdentity(apiBaseUrl: string, userId: number) {
+  return `${apiBaseUrl.trim().replace(/\/+$/, '')}|user:${userId}`
 }
 
 export function createSyncHandlers(deps: SyncDeps) {
@@ -54,7 +42,6 @@ export function createSyncHandlers(deps: SyncDeps) {
     isTestingSyncConnection,
     autoSyncStarted,
     capabilityRefreshStarted,
-    localChangeRevision,
     settings,
     ensureLoaded,
     loadLogs,
@@ -63,7 +50,7 @@ export function createSyncHandlers(deps: SyncDeps) {
     resetForm,
     setFeedback,
     setAiReviewDraftAvailable,
-    setIgdbMetadataAvailable,
+    setSyncApiVersion,
     setLastSyncedAt,
     setLastSyncError,
   } = deps
@@ -80,13 +67,17 @@ export function createSyncHandlers(deps: SyncDeps) {
     }
   }
 
-  function canAttemptSync() {
+  function canRequestConnection() {
     return (
       !isDemoMode &&
       settings.syncApiBaseUrl.trim().length > 0 &&
       settings.syncToken.trim().length > 0 &&
       isOnline()
     )
+  }
+
+  function canAttemptSync() {
+    return canRequestConnection() && settings.syncApiVersion >= 2
   }
 
   function scheduleAutoSync(delay = 1400) {
@@ -115,61 +106,50 @@ export function createSyncHandlers(deps: SyncDeps) {
 
   async function performSync(options?: { silentSuccess?: boolean }) {
     await ensureLoaded()
-    const syncStartedAtRevision = localChangeRevision.value
-    const snapshot = await createSyncSnapshot()
+    const connection = await requestSyncConnection(
+      settings.syncApiBaseUrl,
+      settings.syncToken,
+    )
+    const syncApiVersion = connection.version ?? 1
+    setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
+    setSyncApiVersion(syncApiVersion)
+
+    if (syncApiVersion < 2) {
+      throw new Error(translate(settings.language, 'feedback.syncVersionBlocked'))
+    }
+
+    const serverIdentity = syncServerIdentity(settings.syncApiBaseUrl, connection.user.id)
+    const prepared = await createSyncRequest(serverIdentity)
     const response = await syncWithBackend(
       settings.syncApiBaseUrl,
       settings.syncToken,
-      snapshot,
+      prepared.request,
     )
+    await applySyncResponse(serverIdentity, prepared.submitted, response)
 
-    if (syncStartedAtRevision !== localChangeRevision.value) {
-      if (!options?.silentSuccess) {
-        setFeedback(translate(settings.language, 'feedback.syncSkippedLocalChanges'), 'info')
+    const receivedChanges =
+      response.changes.games.length +
+      response.changes.journeys.length +
+      response.changes.logs.length +
+      response.changes.earnedTrophies.length
+
+    if (receivedChanges > 0) {
+      await ensureLoaded(true)
+
+      if (selectedGameId.value) {
+        await loadLogs(selectedGameId.value)
       }
 
-      return response
-    }
+      await unlockEarnedTrophies('sync')
 
-    const remoteSnapshot: SyncSnapshot = {
-      games: response.games,
-      logs: response.logs,
-      earnedTrophies: response.earnedTrophies ?? snapshot.earnedTrophies,
-    }
+      if (gameForm.id) {
+        const refreshedGame = games.value.find((game) => game.id === gameForm.id)
 
-    // Nothing changed on either side — skip the full clear/rebuild + reload + trophy re-eval.
-    if (snapshotsMatch(snapshot, remoteSnapshot)) {
-      setLastSyncedAt(response.syncedAt)
-      setLastSyncError(null)
-
-      if (!options?.silentSuccess) {
-        setFeedback(
-          translate(settings.language, 'feedback.syncCompleted', {
-            games: snapshot.games.filter((game) => game.deletedAt === null).length,
-            logs: snapshot.logs.filter((logEntry) => logEntry.deletedAt === null).length,
-          }),
-        )
-      }
-
-      return response
-    }
-
-    await replaceWithSyncSnapshot(remoteSnapshot)
-    await ensureLoaded(true)
-
-    if (selectedGameId.value) {
-      await loadLogs(selectedGameId.value)
-    }
-
-    await unlockEarnedTrophies('sync')
-
-    if (gameForm.id) {
-      const refreshedGame = games.value.find((game) => game.id === gameForm.id)
-
-      if (refreshedGame) {
-        editGame(refreshedGame)
-      } else {
-        resetForm()
+        if (refreshedGame) {
+          editGame(refreshedGame)
+        } else {
+          resetForm()
+        }
       }
     }
 
@@ -179,8 +159,8 @@ export function createSyncHandlers(deps: SyncDeps) {
     if (!options?.silentSuccess) {
       setFeedback(
         translate(settings.language, 'feedback.syncCompleted', {
-          games: response.games.filter((game) => game.deletedAt === null).length,
-          logs: response.logs.filter((logEntry) => logEntry.deletedAt === null).length,
+          games: response.totals.games,
+          logs: response.totals.logs,
         }),
       )
     }
@@ -244,7 +224,7 @@ export function createSyncHandlers(deps: SyncDeps) {
         }),
       )
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
+      setSyncApiVersion(response.version ?? 1)
       setLastSyncError(null)
 
       return response
@@ -260,7 +240,7 @@ export function createSyncHandlers(deps: SyncDeps) {
   }
 
   async function refreshSyncCapabilities() {
-    if (capabilityRefreshStarted.value || !canAttemptSync()) {
+    if (capabilityRefreshStarted.value || !canRequestConnection()) {
       return
     }
 
@@ -273,7 +253,7 @@ export function createSyncHandlers(deps: SyncDeps) {
       )
 
       setAiReviewDraftAvailable(response.capabilities.reviewDraft)
-      setIgdbMetadataAvailable(response.capabilities.igdbMetadata ?? true)
+      setSyncApiVersion(response.version ?? 1)
     } catch {
       // Keep the latest known capability state when the startup refresh fails.
     }
@@ -291,19 +271,6 @@ export function createSyncHandlers(deps: SyncDeps) {
       const response = await performSync({
         silentSuccess: options?.silentSuccess,
       })
-
-      if (options?.source !== 'auto') {
-        try {
-          const connection = await requestSyncConnection(
-            settings.syncApiBaseUrl,
-            settings.syncToken,
-          )
-          setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
-          setIgdbMetadataAvailable(connection.capabilities.igdbMetadata ?? true)
-        } catch {
-          // Keep the latest known capability state when the refresh call fails.
-        }
-      }
 
       return response
     } catch (error) {

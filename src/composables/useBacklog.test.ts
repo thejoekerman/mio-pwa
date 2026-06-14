@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isProxy, nextTick, reactive } from 'vue'
-import type { Game } from '../types'
+import type { Game, Journey } from '../types'
 
 // `useBacklog` is a module-level singleton (like `useSettings`) with deep ties to
 // IndexedDB, the network, optional WebGPU, and confetti. We mock every external
@@ -18,7 +18,6 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
     finishedAt: null,
     pausedAt: null,
     nudgeAt: null,
@@ -30,24 +29,66 @@ function makeGame(overrides: Partial<Game> = {}): Game {
 }
 
 let savedGames: Game[] = []
+let savedJourneys: Journey[] = []
 
-async function loadBacklog(opts: { seedGames?: Game[] } = {}) {
-  const { seedGames = [] } = opts
+function makeJourney(game: Game, overrides: Partial<Journey> = {}): Journey {
+  return {
+    id: `${game.id}:initial-journey`,
+    gameId: game.id,
+    status: game.status,
+    platform: game.platform,
+    ownershipType: game.ownershipType,
+    priority: game.priority ?? null,
+    rating: game.rating,
+    review: game.review,
+    playTimeHours: game.playTimeHours,
+    startedAt: null,
+    finishedAt: game.finishedAt,
+    pausedAt: game.pausedAt,
+    nudgeAt: game.nudgeAt,
+    createdAt: game.createdAt,
+    updatedAt: game.updatedAt,
+    deletedAt: game.deletedAt,
+    ...overrides,
+  }
+}
+
+async function loadBacklog(opts: { seedGames?: Game[]; seedJourneys?: Journey[] } = {}) {
+  const { seedGames = [], seedJourneys = seedGames.map((game) => makeJourney(game)) } = opts
   savedGames = []
+  savedJourneys = [...seedJourneys]
 
   vi.resetModules()
   window.localStorage.clear()
 
   vi.doMock('../lib/backlogDb', () => ({
     getAllGames: vi.fn().mockResolvedValue(seedGames),
+    getAllJourneys: vi.fn().mockImplementation(async () => savedJourneys),
     getAllLogs: vi.fn().mockResolvedValue([]),
+    getAllJourneyLogs: vi.fn().mockResolvedValue([]),
     getAllEarnedTrophies: vi.fn().mockResolvedValue([]),
     getLogsForGame: vi.fn().mockResolvedValue([]),
+    getLogsForJourney: vi.fn().mockResolvedValue([]),
     saveGame: vi.fn().mockImplementation(async (game: Game) => {
       savedGames.push(game)
     }),
+    saveGameMetadata: vi.fn().mockResolvedValue(undefined),
+    saveJourney: vi.fn().mockImplementation(async (journey: Journey) => {
+      const index = savedJourneys.findIndex((candidate) => candidate.id === journey.id)
+
+      if (index === -1) {
+        savedJourneys.push(journey)
+      } else {
+        savedJourneys[index] = journey
+      }
+    }),
     deleteGame: vi.fn().mockResolvedValue(undefined),
+    deleteJourney: vi.fn().mockImplementation(async (journeyId: string) => {
+      savedJourneys = savedJourneys.filter((journey) => journey.id !== journeyId)
+      return true
+    }),
     saveLogEntry: vi.fn().mockResolvedValue(undefined),
+    saveLogEntryForJourney: vi.fn().mockResolvedValue(undefined),
     saveEarnedTrophies: vi.fn().mockResolvedValue(undefined),
     ensureDemoData: vi.fn().mockResolvedValue(undefined),
     resetDemoData: vi.fn().mockResolvedValue(undefined),
@@ -71,7 +112,6 @@ async function loadBacklog(opts: { seedGames?: Game[] } = {}) {
     syncWithBackend: vi.fn(),
     testSyncConnection: vi.fn().mockRejectedValue(new Error('no network in tests')),
     requestReviewDraft: vi.fn(),
-    requestEnrich: vi.fn(),
   }))
 
   vi.doMock('../lib/localReviewModels', async (importOriginal) => {
@@ -96,6 +136,7 @@ async function loadBacklog(opts: { seedGames?: Game[] } = {}) {
 describe('useBacklog', () => {
   beforeEach(() => {
     savedGames = []
+    savedJourneys = []
   })
 
   afterEach(() => {
@@ -114,7 +155,6 @@ describe('useBacklog', () => {
       store.gameForm.title = 'WIP'
       store.gameForm.status = 'finished'
       store.gameForm.tags = 'rpg, jrpg'
-      store.gameForm.igdbId = '42'
 
       store.resetForm()
 
@@ -122,7 +162,6 @@ describe('useBacklog', () => {
       expect(store.gameForm.title).toBe('')
       expect(store.gameForm.status).toBe('backlog')
       expect(store.gameForm.tags).toBe('')
-      expect(store.gameForm.igdbId).toBe('')
     })
 
     it('startEditingGame selects the game and populates the form', async () => {
@@ -133,7 +172,6 @@ describe('useBacklog', () => {
         rating: 9,
         playTimeHours: 27.5,
         tags: ['Metroidvania', 'Indie'],
-        igdbId: 1234,
         developer: 'Team Cherry',
         finishedAt: '2026-04-01',
       })
@@ -148,9 +186,30 @@ describe('useBacklog', () => {
       expect(store.gameForm.rating).toBe('9')
       expect(store.gameForm.playTimeHours).toBe('27.5')
       expect(store.gameForm.tags).toBe('Metroidvania, Indie')
-      expect(store.gameForm.igdbId).toBe('1234')
       expect(store.gameForm.developer).toBe('Team Cherry')
       expect(store.gameForm.finishedAt).toBe('2026-04-01')
+    })
+
+    it('startEditingGame preserves an explicitly selected historical Journey', async () => {
+      const game = makeGame({ id: 'history', status: 'playing', review: 'Current run' })
+      const historical = makeJourney(game, {
+        id: 'history-first',
+        status: 'finished',
+        review: 'First run',
+        rating: 10,
+        finishedAt: '2025-01-01',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      })
+      const current = makeJourney(game, { id: 'history-current' })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [historical, current] })
+
+      await store.selectGame(game.id)
+      await store.selectJourney(historical.id)
+      store.startEditingGame(game)
+
+      expect(store.selectedJourneyId.value).toBe(historical.id)
+      expect(store.gameForm.status).toBe('finished')
+      expect(store.gameForm.review).toBe('First run')
     })
   })
 
@@ -165,7 +224,7 @@ describe('useBacklog', () => {
       expect(store.feedback.value?.tone).toBe('error')
     })
 
-    it('persists a new game with sensible defaults and bumps localChangeRevision', async () => {
+    it('persists a new game with sensible defaults', async () => {
       const store = await loadBacklog()
       // Snapshot revision via syncNow → captured indirectly: assert the game is in
       // the in-memory list and was passed to saveGame.
@@ -187,6 +246,24 @@ describe('useBacklog', () => {
       expect(persisted.rating).toBeNull()
       expect(persisted.deletedAt).toBeNull()
       expect(store.games.value.some((g) => g.id === persisted.id)).toBe(true)
+    })
+
+    it('updates the reviewed timestamp when metadata is applied to the same Wikidata identity', async () => {
+      const game = makeGame({
+        externalReferences: [{
+          provider: 'wikidata',
+          externalId: 'Q123',
+          url: 'https://www.wikidata.org/wiki/Q123',
+        }],
+        metadataReviewedAt: '2026-01-01T00:00:00.000Z',
+      })
+      const store = await loadBacklog({ seedGames: [game] })
+
+      store.startEditingGame(game)
+      store.gameForm.metadataReviewed = true
+      const saved = await store.saveCurrentGame()
+
+      expect(saved?.metadataReviewedAt).not.toBe('2026-01-01T00:00:00.000Z')
     })
 
     it('clamps an out-of-range rating to 1–10 for finished games', async () => {
@@ -260,31 +337,28 @@ describe('useBacklog', () => {
       expect(persisted.pausedAt).toBeNull()
     })
 
-    it('strips non-digit chars from the IGDB id and saves a positive integer', async () => {
-      const store = await loadBacklog()
-      // Pretend sync is configured + IGDB capability is available.
-      const { useSettings } = await import('./useSettings')
-      useSettings().settings.syncApiBaseUrl = 'https://server.test'
-      useSettings().settings.syncToken = 'tok'
-      useSettings().settings.igdbMetadataAvailable = true
+    it('updates only the selected Journey when editing Journey fields', async () => {
+      const game = makeGame({ id: 'edit-history', status: 'playing' })
+      const historical = makeJourney(game, {
+        id: 'edit-history-first',
+        status: 'finished',
+        review: 'Original',
+        finishedAt: '2025-01-01',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      })
+      const current = makeJourney(game, { id: 'edit-history-current' })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [historical, current] })
 
-      store.gameForm.title = 'Outer Wilds'
-      store.gameForm.igdbId = 'id-1234abc'
-
-      await store.saveCurrentGame()
-
-      expect(savedGames[0].igdbId).toBe(1234)
-    })
-
-    it('drops the IGDB id when sync is not configured', async () => {
-      const store = await loadBacklog()
-      // Settings default: no sync URL/token.
-      store.gameForm.title = 'Outer Wilds'
-      store.gameForm.igdbId = '1234'
+      await store.selectGame(game.id)
+      await store.selectJourney(historical.id)
+      store.startEditingGame(game)
+      store.gameForm.review = 'Updated original'
 
       await store.saveCurrentGame()
 
-      expect(savedGames[0].igdbId).toBeNull()
+      expect(savedJourneys.find((journey) => journey.id === historical.id)?.review).toBe('Updated original')
+      expect(savedJourneys.find((journey) => journey.id === current.id)).toEqual(current)
+      expect(store.selectedJourneyId.value).toBe(historical.id)
     })
   })
 
@@ -303,6 +377,51 @@ describe('useBacklog', () => {
       const titles = store.filteredGames.value.map((g) => g.title)
       expect(titles).toEqual(expect.arrayContaining(['Celeste', 'Disco Elysium']))
       expect(titles).not.toContain('Balatro')
+    })
+
+    it('includes replays in Playing and exposes a dedicated Replaying filter', async () => {
+      const replaying = makeGame({ id: 'replaying', title: 'Replaying', status: 'playing' })
+      const ordinary = makeGame({ id: 'ordinary', title: 'Ordinary', status: 'playing' })
+      const store = await loadBacklog({
+        seedGames: [replaying, ordinary],
+        seedJourneys: [
+          makeJourney(replaying, {
+            id: 'replaying-first',
+            status: 'finished',
+            finishedAt: '2025-01-01',
+            updatedAt: '2025-01-01T00:00:00.000Z',
+          }),
+          makeJourney(replaying, { id: 'replaying-current', status: 'playing' }),
+          makeJourney(ordinary),
+        ],
+      })
+
+      store.statusFilter.value = 'playing'
+      expect(store.filteredGames.value.map((game) => game.id)).toEqual(expect.arrayContaining(['replaying', 'ordinary']))
+
+      store.statusFilter.value = 'replaying'
+      expect(store.filteredGames.value.map((game) => game.id)).toEqual(['replaying'])
+    })
+
+    it('filters Finished and finish year by any completed Journey', async () => {
+      const replaying = makeGame({ id: 'replaying', title: 'Replaying', status: 'playing' })
+      const store = await loadBacklog({
+        seedGames: [replaying],
+        seedJourneys: [
+          makeJourney(replaying, {
+            id: 'replaying-first',
+            status: 'finished',
+            finishedAt: '2025-06-01',
+            updatedAt: '2025-06-01T00:00:00.000Z',
+          }),
+          makeJourney(replaying, { id: 'replaying-current', status: 'playing' }),
+        ],
+      })
+
+      store.statusFilter.value = 'finished'
+      store.finishedYearFilter.value = '2025'
+
+      expect(store.filteredGames.value.map((game) => game.id)).toEqual(['replaying'])
     })
 
     it('filters by ownership and treats `both` as a match for either physical or digital', async () => {
@@ -364,6 +483,22 @@ describe('useBacklog', () => {
       })
     })
 
+    it('counts finished Journeys separately from unique Games', async () => {
+      const game = makeGame({ id: 'replayed', status: 'finished', finishedAt: '2026-01-01' })
+      const store = await loadBacklog({
+        seedGames: [game],
+        seedJourneys: [
+          makeJourney(game, { id: 'first', finishedAt: '2025-01-01' }),
+          makeJourney(game, { id: 'replay', finishedAt: '2026-01-01' }),
+        ],
+      })
+
+      expect(store.stats.value.total).toBe(1)
+      expect(store.stats.value.finished).toBe(2)
+      expect(store.finishedYearOptions.value).toEqual(['2026', '2025'])
+      expect(store.finishedJourneyEntries.value).toHaveLength(2)
+    })
+
     it('picks the first playing/ongoing game as currentFocus', async () => {
       const games = [
         makeGame({ id: 'a', status: 'backlog' }),
@@ -393,6 +528,138 @@ describe('useBacklog', () => {
 
       expect(store.games.value.some((g) => g.id === 'gx')).toBe(false)
       expect(store.gameForm.id).toBeNull()
+    })
+  })
+
+  describe('removeJourney', () => {
+    it('removes one Journey while preserving the Game and remaining Journey', async () => {
+      const game = makeGame({ id: 'multi' })
+      const first = makeJourney(game, { id: 'first', status: 'finished' })
+      const replay = makeJourney(game, { id: 'replay', status: 'playing' })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [first, replay] })
+
+      expect(await store.removeJourney(replay)).toBe(true)
+      expect(savedJourneys).toEqual([first])
+      expect(store.games.value).toHaveLength(1)
+      expect(store.selectedJourneyId.value).toBe(first.id)
+    })
+
+    it('refuses to delete the Game’s final Journey', async () => {
+      const game = makeGame({ id: 'only' })
+      const only = makeJourney(game)
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [only] })
+
+      expect(await store.removeJourney(only)).toBe(false)
+      expect(savedJourneys).toEqual([only])
+    })
+  })
+
+  describe('startReplay', () => {
+    it('creates a fresh active Journey and derives Replaying without changing the finished Journey', async () => {
+      const game = makeGame({
+        id: 'replay-me',
+        title: 'Replay Me',
+        status: 'finished',
+        platform: 'Switch',
+        ownershipType: 'physical',
+        rating: 10,
+        review: 'First journey.',
+        playTimeHours: 80,
+        finishedAt: '2026-05-01',
+      })
+      const initialJourney = makeJourney(game)
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [initialJourney] })
+
+      await store.startReplay(game)
+
+      expect(savedJourneys).toHaveLength(2)
+      expect(savedJourneys[0]).toEqual(initialJourney)
+      expect(savedJourneys[1]).toMatchObject({
+        gameId: 'replay-me',
+        status: 'playing',
+        platform: 'Switch',
+        ownershipType: 'physical',
+        rating: null,
+        review: '',
+        playTimeHours: null,
+        finishedAt: null,
+      })
+      expect(store.displayStatusByGameId.value.get('replay-me')).toBe('replaying')
+    })
+
+    it('creates a local replay while MioServer 2 sync is configured', async () => {
+      const game = makeGame({ id: 'synced', title: 'Synced', status: 'finished' })
+      const store = await loadBacklog({ seedGames: [game] })
+      const { useSettings } = await import('./useSettings')
+      useSettings().settings.syncApiBaseUrl = 'https://server.test'
+      useSettings().settings.syncToken = 'token'
+
+      await store.startReplay(game)
+
+      expect(savedJourneys).toHaveLength(2)
+      expect(savedJourneys[1]).toMatchObject({ gameId: 'synced', status: 'playing' })
+      expect(store.feedback.value?.tone).toBe('success')
+    })
+
+    it('completes the selected replay without changing the original finished Journey', async () => {
+      const game = makeGame({ id: 'complete-replay', title: 'Complete Replay', status: 'playing' })
+      const original = makeJourney(game, {
+        id: 'original',
+        status: 'finished',
+        rating: 10,
+        review: 'Original review',
+        finishedAt: '2025-01-01',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      })
+      const replay = makeJourney(game, {
+        id: 'replay',
+        status: 'playing',
+        startedAt: '2026-06-01',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+      })
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [original, replay] })
+      await store.selectGame(game.id)
+
+      await store.updateSelectedJourneyStatus('finished')
+
+      expect(savedJourneys.find((journey) => journey.id === 'original')).toEqual(original)
+      expect(savedJourneys.find((journey) => journey.id === 'replay')).toMatchObject({
+        status: 'finished',
+        finishedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      })
+    })
+  })
+
+  describe('addCurrentJourneyToGame', () => {
+    it('adds entered Journey details without creating or changing the existing Game', async () => {
+      const game = makeGame({
+        id: 'existing',
+        title: 'Existing Game',
+        status: 'finished',
+        platform: 'Switch',
+        finishedAt: '2025-01-01',
+      })
+      const initialJourney = makeJourney(game)
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [initialJourney] })
+
+      store.startCreatingGame()
+      store.gameForm.title = 'Provider Title'
+      store.gameForm.status = 'playing'
+      store.gameForm.platform = 'PC'
+      store.gameForm.ownershipType = 'digital'
+      store.gameForm.playTimeHours = '2.5'
+
+      expect(await store.addCurrentJourneyToGame(game)).toBe(true)
+      expect(savedGames).toHaveLength(0)
+      expect(savedJourneys).toHaveLength(2)
+      expect(savedJourneys[1]).toMatchObject({
+        gameId: 'existing',
+        status: 'playing',
+        platform: 'PC',
+        ownershipType: 'digital',
+        playTimeHours: 2.5,
+      })
+      expect(savedJourneys[1].startedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     })
   })
 

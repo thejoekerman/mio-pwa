@@ -1,6 +1,10 @@
-const CACHE_VERSION = 'miolog-v2.3.3'
+const CACHE_VERSION = 'miolog-v3.0.0'
 const SHELL_CACHE = `${CACHE_VERSION}-shell`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
+const REMOTE_ARTWORK_HOSTS = new Set([
+  'images.igdb.com',
+  'upload.wikimedia.org',
+])
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
@@ -58,9 +62,10 @@ self.addEventListener('fetch', (event) => {
 
   const requestUrl = new URL(request.url)
   const isSameOrigin = requestUrl.origin === self.location.origin
-  const isIgdbImage = request.destination === 'image' && requestUrl.hostname === 'images.igdb.com'
+  const isRemoteArtwork =
+    request.destination === 'image' && REMOTE_ARTWORK_HOSTS.has(requestUrl.hostname)
 
-  if (!isSameOrigin && !isIgdbImage) {
+  if (!isSameOrigin && !isRemoteArtwork) {
     return
   }
 
@@ -86,7 +91,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   const isStaticAsset =
-    isIgdbImage ||
+    isRemoteArtwork ||
     request.destination === 'script' ||
     request.destination === 'style' ||
     request.destination === 'image' ||

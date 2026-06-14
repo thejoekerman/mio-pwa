@@ -4,3 +4,4 @@ dist
 *.local
 coverage
 TODO.md
+MAYU_*.md

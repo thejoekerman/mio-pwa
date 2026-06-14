@@ -4,7 +4,7 @@ import { isDesktopMode } from './lib/appMode'
 const EditGameView = () => import('./views/EditGameView.vue')
 const GameView = () => import('./views/GameView.vue')
 const HomeView = () => import('./views/HomeView.vue')
-const JournalView = () => import('./views/JournalView.vue')
+const StatsView = () => import('./views/StatsView.vue')
 const LibraryView = () => import('./views/LibraryView.vue')
 const SettingsView = () => import('./views/SettingsView.vue')
 const TrophiesView = () => import('./views/TrophiesView.vue')
@@ -34,9 +34,13 @@ export const router = createRouter({
       component: LibraryView,
     },
     {
+      path: '/stats',
+      name: 'stats',
+      component: StatsView,
+    },
+    {
       path: '/journal',
-      name: 'journal',
-      component: JournalView,
+      redirect: { name: 'stats' },
     },
     {
       path: '/game/:gameId',

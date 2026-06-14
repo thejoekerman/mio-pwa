@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import LibraryView from './LibraryView.vue'
-import type { Game, GameOwnershipFilter, GameSortOption, GameStatus } from '../types'
+import type { Game, GameOwnershipFilter, GameSortOption, LibraryStatusFilter } from '../types'
 import type { ComputedRef, Ref } from 'vue'
 
 interface LibraryBacklogState {
@@ -16,8 +16,8 @@ interface LibraryBacklogState {
   selectGame: ReturnType<typeof vi.fn>
   selectedGameId: Ref<string | null>
   sortOption: Ref<GameSortOption>
-  statusFilter: Ref<'all' | GameStatus>
-  updateGameStatus: ReturnType<typeof vi.fn>
+  statusFilter: Ref<LibraryStatusFilter>
+  updateCurrentJourneyStatus: ReturnType<typeof vi.fn>
 }
 
 function game(overrides: Partial<Game>): Game {
@@ -30,17 +30,6 @@ function game(overrides: Partial<Game>): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
-    igdbUrl: null,
-    igdbTtbHastilySeconds: null,
-    igdbTtbNormallySeconds: null,
-    igdbTtbCompletelySeconds: null,
-    igdbTtbCount: null,
-    igdbTtbUpdatedAt: null,
-    igdbDevelopers: null,
-    igdbPublishers: null,
-    igdbThemes: null,
-    igdbGameModes: null,
     releaseYear: null,
     priority: null,
     developer: null,
@@ -71,7 +60,7 @@ vi.mock('../composables/useBacklog', async () => {
   const { computed, ref } = await vi.importActual<typeof import('vue')>('vue')
   const games = ref<Game[]>([])
   const searchQuery = ref('')
-  const statusFilter = ref<'all' | GameStatus>('backlog')
+  const statusFilter = ref<LibraryStatusFilter>('backlog')
   const ownershipFilter = ref<GameOwnershipFilter>('all')
   const finishedYearFilter = ref<'all' | string>('all')
   const sortOption = ref<GameSortOption>('created-desc')
@@ -92,7 +81,7 @@ vi.mock('../composables/useBacklog', async () => {
     selectedGameId: ref<string | null>(null),
     sortOption,
     statusFilter,
-    updateGameStatus: vi.fn(),
+    updateCurrentJourneyStatus: vi.fn(),
   }
 
   return {

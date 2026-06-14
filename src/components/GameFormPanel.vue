@@ -10,32 +10,26 @@ import {
   type GameFormState,
 } from '../types'
 import {
-  wikidataEntityIdsFromClaims,
-  wikidataEntityLabelMap,
-  wikidataReleaseYearFromClaims,
-  tagsFromGenreLabel,
-} from '../lib/wikidataUtils'
+  getWikidataGameMetadata,
+  getWikipediaCoverSuggestion,
+  searchWikidataGames,
+  type WikipediaCoverSuggestion,
+  type WikidataGameMetadata,
+  type WikidataGameSuggestion,
+} from '../lib/wikidataClient'
 import { addDaysDate } from '../lib/dateUtils'
 import { isOffline } from '../lib/network'
 import { dedupeTags } from '../lib/tags'
 const { statusLabel, t, tagLabel } = useI18n()
 
-interface WikidataSuggestion {
-  id: string
-  title: string
-  description: string
-}
-
 const {
   canRateCurrentStatus,
-  canUseIgdbMetadata,
   createdAt,
   formatDate,
   isSaving,
   updatedAt,
 } = defineProps<{
   canRateCurrentStatus: boolean
-  canUseIgdbMetadata: boolean
   createdAt?: string | null
   formatDate?: (value: string) => string
   isSaving: boolean
@@ -50,9 +44,19 @@ const emit = defineEmits<{
   save: []
 }>()
 
-const wikidataSuggestions = ref<WikidataSuggestion[]>([])
+const wikidataSuggestions = ref<WikidataGameSuggestion[]>([])
 const isSearchingWikidata = ref(false)
 const wikidataSearchFailed = ref(false)
+const wikidataSearchCompleted = ref(false)
+const wikipediaCoverSuggestion = ref<WikipediaCoverSuggestion | null>(null)
+const metadataSuggestion = ref<WikidataGameMetadata | null>(null)
+const selectedMetadataFields = ref({
+  developer: false,
+  publisher: false,
+  releaseYear: false,
+  tags: false,
+})
+const isLoadingWikipediaCover = ref(false)
 let wikidataSearchTimer: number | null = null
 let wikidataAbortController: AbortController | null = null
 
@@ -178,6 +182,7 @@ function queueWikidataSearch(title: string) {
   wikidataAbortController?.abort()
   wikidataAbortController = null
   wikidataSearchFailed.value = false
+  wikidataSearchCompleted.value = false
 
   if (title.length < 3 || isOffline()) {
     wikidataSuggestions.value = []
@@ -202,27 +207,8 @@ async function searchWikidataTitles(title: string) {
   isSearchingWikidata.value = true
 
   try {
-    const params = new URLSearchParams({
-      action: 'wbsearchentities',
-      format: 'json',
-      language: 'en',
-      uselang: 'en',
-      origin: '*',
-      limit: '8',
-      search: title,
-    })
-    const response = await fetch(`https://www.wikidata.org/w/api.php?${params.toString()}`, {
-      signal: wikidataAbortController.signal,
-    })
-
-    if (!response.ok) {
-      throw new Error('Wikidata search failed.')
-    }
-
-    const payload = await response.json() as { search?: unknown[] }
-    wikidataSuggestions.value = Array.isArray(payload.search)
-      ? payload.search.flatMap(wikidataSuggestionFromEntity).slice(0, 4)
-      : []
+    wikidataSuggestions.value = await searchWikidataGames(title, wikidataAbortController.signal)
+    wikidataSearchCompleted.value = true
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       return
@@ -230,120 +216,115 @@ async function searchWikidataTitles(title: string) {
 
     wikidataSuggestions.value = []
     wikidataSearchFailed.value = true
+    wikidataSearchCompleted.value = true
   } finally {
     isSearchingWikidata.value = false
   }
 }
 
-function wikidataSuggestionFromEntity(entity: unknown): WikidataSuggestion[] {
-  if (!entity || typeof entity !== 'object') {
-    return []
-  }
-
-  const record = entity as Record<string, unknown>
-  const id = typeof record.id === 'string' ? record.id : ''
-  const title = typeof record.label === 'string' ? record.label : ''
-  const description = typeof record.description === 'string' ? record.description : ''
-
-  if (!id || !title || !isLikelyVideoGameDescription(description)) {
-    return []
-  }
-
-  return [
-    {
-      id,
-      title,
-      description,
-    },
-  ]
+function searchCurrentTitle() {
+  queueWikidataSearch(form.value.title.trim())
 }
 
-function isLikelyVideoGameDescription(description: string) {
-  return (
-    /video game|computer game/i.test(description) &&
-    !/soundtrack|podcast|film|theme/i.test(description)
+function wikidataSuggestionDetails(suggestion: WikidataGameSuggestion) {
+  const description = suggestion.releaseYear
+    ? suggestion.description.replace(new RegExp(`^${suggestion.releaseYear}\\s+`, 'i'), '')
+    : suggestion.description
+
+  return [
+    suggestion.releaseYear,
+    suggestion.developer,
+    description,
+  ].filter(Boolean).join(' · ')
+}
+
+async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
+  if (!form.value.id) {
+    form.value.title = suggestion.title
+  }
+  form.value.wikidataId = suggestion.id
+  wikidataSuggestions.value = []
+  wikidataSearchFailed.value = false
+  wikidataSearchCompleted.value = false
+  wikipediaCoverSuggestion.value = null
+  metadataSuggestion.value = null
+
+  const [suggestedMetadata, coverSuggestion] = isOffline()
+    ? [
+        { tags: [], developer: null, publisher: null, releaseYear: null } satisfies WikidataGameMetadata,
+        null,
+      ]
+    : await Promise.all([
+        getWikidataGameMetadata(suggestion.id),
+        loadWikipediaCoverSuggestion(suggestion.id),
+      ])
+
+  wikipediaCoverSuggestion.value = coverSuggestion
+  metadataSuggestion.value = hasMetadataSuggestion(suggestedMetadata) ? suggestedMetadata : null
+  selectedMetadataFields.value = {
+    developer: Boolean(suggestedMetadata.developer && !form.value.developer.trim()),
+    publisher: Boolean(suggestedMetadata.publisher && !form.value.publisher.trim()),
+    releaseYear: suggestedMetadata.releaseYear !== null && !form.value.releaseYear.trim(),
+    tags: suggestedMetadata.tags.length > 0,
+  }
+}
+
+function hasMetadataSuggestion(metadata: WikidataGameMetadata) {
+  return Boolean(
+    metadata.developer
+    || metadata.publisher
+    || metadata.releaseYear !== null
+    || metadata.tags.length > 0,
   )
 }
 
-async function useWikidataSuggestion(suggestion: WikidataSuggestion) {
-  form.value.title = suggestion.title
-  wikidataSuggestions.value = []
-  wikidataSearchFailed.value = false
+function applyMetadataSuggestion() {
+  const suggestion = metadataSuggestion.value
 
-  const { tags, developer, publisher, releaseYear } = await getWikidataMetadata(suggestion.id)
+  if (!suggestion) {
+    return
+  }
 
-  if (tags.length > 0) {
-    setTags([...selectedTags.value, ...tags])
+  if (selectedMetadataFields.value.developer && suggestion.developer) {
+    form.value.developer = suggestion.developer
   }
-  if (developer && !form.value.developer.trim()) {
-    form.value.developer = developer
+  if (selectedMetadataFields.value.publisher && suggestion.publisher) {
+    form.value.publisher = suggestion.publisher
   }
-  if (publisher && !form.value.publisher.trim()) {
-    form.value.publisher = publisher
+  if (selectedMetadataFields.value.releaseYear && suggestion.releaseYear !== null) {
+    form.value.releaseYear = String(suggestion.releaseYear)
   }
-  if (releaseYear !== null && !form.value.releaseYear.trim()) {
-    form.value.releaseYear = String(releaseYear)
+  if (selectedMetadataFields.value.tags && suggestion.tags.length > 0) {
+    setTags([...selectedTags.value, ...suggestion.tags])
+  }
+
+  form.value.metadataReviewed = true
+  metadataSuggestion.value = null
+}
+
+async function loadWikipediaCoverSuggestion(itemId: string) {
+  isLoadingWikipediaCover.value = true
+
+  try {
+    return await getWikipediaCoverSuggestion(itemId)
+  } finally {
+    isLoadingWikipediaCover.value = false
   }
 }
 
-async function getWikidataMetadata(itemId: string) {
-  const empty = { tags: [] as string[], developer: null as string | null, publisher: null as string | null, releaseYear: null as number | null }
+function useWikipediaCover() {
+  const suggestion = wikipediaCoverSuggestion.value
 
-  if (isOffline()) {
-    return empty
+  if (!suggestion) {
+    return
   }
 
-  try {
-    const claimsParams = new URLSearchParams({
-      action: 'wbgetclaims',
-      format: 'json',
-      origin: '*',
-      entity: itemId,
-    })
-    const claimsResponse = await fetch(`https://www.wikidata.org/w/api.php?${claimsParams.toString()}`)
-
-    if (!claimsResponse.ok) {
-      return empty
-    }
-
-    const claimsData = await claimsResponse.json()
-    const genreIds = wikidataEntityIdsFromClaims(claimsData, 'P136').slice(0, 6)
-    const developerIds = wikidataEntityIdsFromClaims(claimsData, 'P178').slice(0, 1)
-    const publisherIds = wikidataEntityIdsFromClaims(claimsData, 'P123').slice(0, 1)
-    const releaseYear = wikidataReleaseYearFromClaims(claimsData)
-
-    const entityIds = [...genreIds, ...developerIds, ...publisherIds]
-
-    if (entityIds.length === 0) {
-      return { ...empty, releaseYear }
-    }
-
-    const labelParams = new URLSearchParams({
-      action: 'wbgetentities',
-      format: 'json',
-      languages: 'en',
-      languagefallback: '1',
-      origin: '*',
-      props: 'labels',
-      ids: entityIds.join('|'),
-    })
-    const labelResponse = await fetch(`https://www.wikidata.org/w/api.php?${labelParams.toString()}`)
-
-    if (!labelResponse.ok) {
-      return { ...empty, releaseYear }
-    }
-
-    const labelMap = wikidataEntityLabelMap(await labelResponse.json())
-    const tags = [
-      ...new Set(genreIds.map((id) => labelMap[id]).filter((l): l is string => Boolean(l)).flatMap(tagsFromGenreLabel)),
-    ].slice(0, 3)
-    const developer = developerIds.length > 0 ? (labelMap[developerIds[0]] ?? null) : null
-    const publisher = publisherIds.length > 0 ? (labelMap[publisherIds[0]] ?? null) : null
-
-    return { tags, developer, publisher, releaseYear }
-  } catch {
-    return empty
-  }
+  form.value.coverUrl = suggestion.imageUrl
+  form.value.coverSourceUrl = suggestion.imageUrl
+  form.value.coverSourcePageUrl = suggestion.pageUrl
+  form.value.wikipediaTitle = suggestion.articleTitle
+  form.value.metadataReviewed = true
+  wikipediaCoverSuggestion.value = null
 }
 
 </script>
@@ -378,7 +359,23 @@ async function getWikidataMetadata(itemId: string) {
       </div>
     </div>
 
-    <form class="game-form" novalidate @submit.prevent="emit('save')">
+  <form class="game-form" novalidate @submit.prevent="emit('save')">
+      <div class="form-section-heading form-section-heading-with-action">
+        <div>
+          <p class="section-kicker">{{ t('form.gameDetails') }}</p>
+          <p>{{ t('form.gameDetailsHint') }}</p>
+        </div>
+        <button
+          v-if="form.id"
+          class="mini-button metadata-assistant-action"
+          type="button"
+          :disabled="form.title.trim().length < 3 || isSearchingWikidata"
+          @click="searchCurrentTitle"
+        >
+          {{ isSearchingWikidata ? t('form.wikidataSearching') : t('form.findMetadata') }}
+        </button>
+      </div>
+
       <VTextField
         v-model="form.title"
         class="form-control"
@@ -388,7 +385,7 @@ async function getWikidataMetadata(itemId: string) {
       />
 
       <div
-        v-if="!form.id && (isSearchingWikidata || wikidataSuggestions.length > 0 || wikidataSearchFailed)"
+        v-if="isSearchingWikidata || wikidataSearchCompleted || form.wikidataId"
         class="wikidata-suggestions"
       >
         <p class="field-hint">
@@ -397,7 +394,11 @@ async function getWikidataMetadata(itemId: string) {
               ? t('form.wikidataSearching')
               : wikidataSearchFailed
                 ? t('form.wikidataFailed')
-                : t('form.wikidataSuggestions')
+                : wikidataSuggestions.length > 0
+                  ? t('form.wikidataSuggestions')
+                  : form.wikidataId
+                    ? t('form.wikidataLinked', { id: form.wikidataId })
+                    : t('form.wikidataNoMatches')
           }}
         </p>
         <div v-if="wikidataSuggestions.length > 0" class="wikidata-suggestion-list">
@@ -409,9 +410,144 @@ async function getWikidataMetadata(itemId: string) {
             @click="useWikidataSuggestion(suggestion)"
           >
             <span>{{ suggestion.title }}</span>
-            <small>{{ suggestion.description }}</small>
+            <small>{{ wikidataSuggestionDetails(suggestion) }}</small>
           </button>
         </div>
+      </div>
+
+      <div v-if="metadataSuggestion" class="metadata-review">
+        <div>
+          <strong>{{ t('form.metadataReviewTitle') }}</strong>
+          <p class="field-hint">{{ t('form.metadataReviewHint') }}</p>
+        </div>
+
+        <label v-if="metadataSuggestion.releaseYear" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.releaseYear" type="checkbox" />
+          <span>
+            <small>{{ t('form.releaseYear') }}</small>
+            <strong>{{ form.releaseYear || t('form.metadataEmpty') }} → {{ metadataSuggestion.releaseYear }}</strong>
+          </span>
+        </label>
+
+        <label v-if="metadataSuggestion.developer" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.developer" type="checkbox" />
+          <span>
+            <small>{{ t('form.developer') }}</small>
+            <strong>{{ form.developer || t('form.metadataEmpty') }} → {{ metadataSuggestion.developer }}</strong>
+          </span>
+        </label>
+
+        <label v-if="metadataSuggestion.publisher" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.publisher" type="checkbox" />
+          <span>
+            <small>{{ t('form.publisher') }}</small>
+            <strong>{{ form.publisher || t('form.metadataEmpty') }} → {{ metadataSuggestion.publisher }}</strong>
+          </span>
+        </label>
+
+        <label v-if="metadataSuggestion.tags.length > 0" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.tags" type="checkbox" />
+          <span>
+            <small>{{ t('form.tags') }}</small>
+            <strong>{{ t('form.metadataAddTags', { tags: metadataSuggestion.tags.join(', ') }) }}</strong>
+          </span>
+        </label>
+
+        <button class="mini-button" type="button" @click="applyMetadataSuggestion">
+          {{ t('form.applyMetadata') }}
+        </button>
+      </div>
+
+      <div v-if="isLoadingWikipediaCover" class="metadata-cover-status field-hint">
+        {{ t('form.wikipediaCoverSearching') }}
+      </div>
+
+      <div v-else-if="wikipediaCoverSuggestion" class="metadata-cover-suggestion">
+        <img
+          :src="wikipediaCoverSuggestion.imageUrl"
+          :alt="t('form.wikipediaCoverAlt', { title: form.title })"
+        />
+        <div>
+          <strong>{{ t('form.wikipediaCoverSuggestion') }}</strong>
+          <small>{{ wikipediaCoverSuggestion.articleTitle }}</small>
+          <button class="mini-button" type="button" @click="useWikipediaCover">
+            {{ t('form.useWikipediaCover') }}
+          </button>
+        </div>
+      </div>
+
+      <VCombobox
+        class="form-control tag-combobox"
+        chips
+        closable-chips
+        clearable
+        :hint="t('form.tagsHint')"
+        :items="suggestedTagOptions"
+        :label="t('form.tags')"
+        multiple
+        persistent-hint
+        :placeholder="t('form.addOwnTag')"
+        :model-value="selectedTags"
+        @update:model-value="updateTags"
+      />
+
+      <VExpansionPanels class="more-details-panel" variant="accordion">
+        <VExpansionPanel>
+          <VExpansionPanelTitle>{{ t('form.moreDetails') }}</VExpansionPanelTitle>
+          <VExpansionPanelText>
+            <div class="more-details-fields">
+              <VTextField
+                v-model="form.coverUrl"
+                class="form-control"
+                type="url"
+                inputmode="url"
+                :hint="t('form.coverUrlHint')"
+                :label="t('form.coverUrl')"
+                persistent-hint
+                :placeholder="t('form.coverUrlPlaceholder')"
+              />
+
+              <div class="split-fields">
+                <VTextField
+                  v-model="form.releaseYear"
+                  class="form-control"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="4"
+                  :hint="t('form.releaseYearHint')"
+                  :label="t('form.releaseYear')"
+                  persistent-hint
+                  :placeholder="t('form.releaseYearPlaceholder')"
+                />
+
+                <VTextField
+                  v-model="form.developer"
+                  class="form-control"
+                  type="text"
+                  :hint="t('form.developerHint')"
+                  :label="t('form.developer')"
+                  persistent-hint
+                  :placeholder="t('form.developerPlaceholder')"
+                />
+
+                <VTextField
+                  v-model="form.publisher"
+                  class="form-control"
+                  type="text"
+                  :hint="t('form.publisherHint')"
+                  :label="t('form.publisher')"
+                  persistent-hint
+                  :placeholder="t('form.publisherPlaceholder')"
+                />
+              </div>
+            </div>
+          </VExpansionPanelText>
+        </VExpansionPanel>
+      </VExpansionPanels>
+
+      <div class="form-section-heading">
+        <p class="section-kicker">{{ t('form.journeyDetails') }}</p>
+        <p>{{ t('form.journeyDetailsHint') }}</p>
       </div>
 
       <div class="split-fields">
@@ -471,6 +607,15 @@ async function getWikidataMetadata(itemId: string) {
           persistent-hint
         />
 
+        <VSelect
+          v-model="form.priority"
+          class="form-control"
+          :hint="t('form.priorityHint')"
+          :items="priorityOptions"
+          :label="t('form.priority')"
+          persistent-hint
+        />
+
         <VTextField
           v-if="form.status === 'finished'"
           v-model="form.finishedAt"
@@ -491,98 +636,6 @@ async function getWikidataMetadata(itemId: string) {
           persistent-hint
         />
       </div>
-
-      <VCombobox
-        class="form-control tag-combobox"
-        chips
-        closable-chips
-        clearable
-        :hint="t('form.tagsHint')"
-        :items="suggestedTagOptions"
-        :label="t('form.tags')"
-        multiple
-        persistent-hint
-        :placeholder="t('form.addOwnTag')"
-        :model-value="selectedTags"
-        @update:model-value="updateTags"
-      />
-
-      <VExpansionPanels class="more-details-panel" variant="accordion">
-        <VExpansionPanel>
-          <VExpansionPanelTitle>{{ t('form.moreDetails') }}</VExpansionPanelTitle>
-          <VExpansionPanelText>
-            <div class="more-details-fields">
-              <VTextField
-                v-if="canUseIgdbMetadata"
-                v-model="form.igdbId"
-                class="form-control"
-                type="text"
-                inputmode="numeric"
-                :hint="t('form.igdbIdHint')"
-                :label="t('form.igdbId')"
-                persistent-hint
-                :placeholder="t('form.igdbIdPlaceholder')"
-              />
-
-              <VTextField
-                v-model="form.coverUrl"
-                class="form-control"
-                type="url"
-                inputmode="url"
-                :hint="t('form.coverUrlHint')"
-                :label="t('form.coverUrl')"
-                persistent-hint
-                :placeholder="t('form.coverUrlPlaceholder')"
-              />
-
-              <div class="split-fields">
-                <VTextField
-                  v-model="form.releaseYear"
-                  class="form-control"
-                  type="text"
-                  inputmode="numeric"
-                  maxlength="4"
-                  :hint="t('form.releaseYearHint')"
-                  :label="t('form.releaseYear')"
-                  persistent-hint
-                  :placeholder="t('form.releaseYearPlaceholder')"
-                />
-
-                <VSelect
-                  v-model="form.priority"
-                  class="form-control"
-                  :hint="t('form.priorityHint')"
-                  :items="priorityOptions"
-                  :label="t('form.priority')"
-                  persistent-hint
-                />
-              </div>
-
-              <div class="split-fields">
-                <VTextField
-                  v-model="form.developer"
-                  class="form-control"
-                  type="text"
-                  :hint="t('form.developerHint')"
-                  :label="t('form.developer')"
-                  persistent-hint
-                  :placeholder="t('form.developerPlaceholder')"
-                />
-
-                <VTextField
-                  v-model="form.publisher"
-                  class="form-control"
-                  type="text"
-                  :hint="t('form.publisherHint')"
-                  :label="t('form.publisher')"
-                  persistent-hint
-                  :placeholder="t('form.publisherPlaceholder')"
-                />
-              </div>
-            </div>
-          </VExpansionPanelText>
-        </VExpansionPanel>
-      </VExpansionPanels>
 
       <VTextarea
         v-if="form.id"

@@ -3,10 +3,11 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import GameLibraryPanel from '../components/GameLibraryPanel.vue'
 import { useBacklog } from '../composables/useBacklog'
-import type { GameOwnershipFilter, GameSortOption, GameStatus } from '../types'
+import type { GameOwnershipFilter, GameSortOption, LibraryStatusFilter } from '../types'
 const router = useRouter()
 const {
   filteredGames,
+  displayStatusByGameId,
   finishedYearFilter,
   finishedYearOptions,
   games,
@@ -17,7 +18,7 @@ const {
   selectedGameId,
   sortOption,
   statusFilter,
-  updateGameStatus,
+  updateCurrentJourneyStatus,
 } = useBacklog()
 
 const hasActiveFilters = computed(
@@ -34,7 +35,7 @@ function handleLibraryUpdate(payload: {
   ownershipFilter?: GameOwnershipFilter
   searchQuery?: string
   sortOption?: GameSortOption
-  statusFilter?: 'all' | GameStatus
+  statusFilter?: LibraryStatusFilter
 }) {
   if (payload.searchQuery !== undefined) {
     searchQuery.value = payload.searchQuery
@@ -70,8 +71,9 @@ async function openGame(gameId: string) {
 <template>
   <div class="view-stack">
     <GameLibraryPanel
-      :change-game-status="updateGameStatus"
+      :change-game-status="updateCurrentJourneyStatus"
       :filtered-games="filteredGames"
+      :display-status-by-game-id="displayStatusByGameId"
       :finished-year-filter="finishedYearFilter"
       :finished-year-options="finishedYearOptions"
       :games-count="games.length"

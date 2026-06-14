@@ -13,7 +13,6 @@ function makeGame(overrides: Partial<Game> = {}): Game {
     platform: '',
     ownershipType: null,
     tags: [],
-    igdbId: null,
     finishedAt: null,
     pausedAt: null,
     nudgeAt: null,
@@ -56,24 +55,20 @@ describe('normalizeReleaseYear', () => {
 
 describe('getDisplayDeveloper', () => {
   it('returns manual developer when set', () => {
-    expect(getDisplayDeveloper(makeGame({ developer: 'Capcom', igdbDevelopers: ['Konami'] }))).toBe('Capcom')
+    expect(getDisplayDeveloper(makeGame({ developer: 'Capcom' }))).toBe('Capcom')
   })
 
-  it('falls back to igdbDevelopers when no manual developer', () => {
-    expect(getDisplayDeveloper(makeGame({ developer: null, igdbDevelopers: ['Capcom', 'Studio A'] }))).toBe('Capcom, Studio A')
-  })
-
-  it('returns empty string when neither is set', () => {
-    expect(getDisplayDeveloper(makeGame({ developer: null, igdbDevelopers: null }))).toBe('')
+  it('returns empty string when no developer is set', () => {
+    expect(getDisplayDeveloper(makeGame({ developer: null }))).toBe('')
   })
 })
 
 describe('getDisplayPublisher', () => {
   it('returns manual publisher when set', () => {
-    expect(getDisplayPublisher(makeGame({ publisher: 'Capcom', igdbPublishers: ['Konami'] }))).toBe('Capcom')
+    expect(getDisplayPublisher(makeGame({ publisher: 'Capcom' }))).toBe('Capcom')
   })
 
-  it('falls back to igdbPublishers when no manual publisher', () => {
-    expect(getDisplayPublisher(makeGame({ publisher: null, igdbPublishers: ['Capcom'] }))).toBe('Capcom')
+  it('returns empty string when no publisher is set', () => {
+    expect(getDisplayPublisher(makeGame({ publisher: null }))).toBe('')
   })
 })

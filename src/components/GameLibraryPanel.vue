@@ -4,23 +4,25 @@ import GameCover from './GameCover.vue'
 import { useSettings } from '../composables/useSettings'
 import { useI18n } from '../i18n'
 import { getDisplayDeveloper, getDisplayPublisher } from '../lib/gameMetadata'
-import { getTimeToBeatHours } from '../lib/timeToBeat'
 import {
   GAME_OWNERSHIP_FILTERS,
   GAME_SORT_OPTIONS,
   GAME_STATUSES,
   type Game,
+  type GameDisplayStatus,
   type GameOwnershipFilter,
   type GameSortOption,
   type GameStatus,
+  type LibraryStatusFilter,
   type LibraryViewMode,
 } from '../types'
 const { ownershipLabel, sortLabel, statusLabel, t } = useI18n()
 const { settings, setLibraryViewMode } = useSettings()
-const STATUS_FILTER_ORDER: GameStatus[] = [
+const STATUS_FILTER_ORDER: GameDisplayStatus[] = [
   'backlog',
   'finished',
   'playing',
+  'replaying',
   'ongoing',
   'paused',
   'abandoned',
@@ -29,6 +31,7 @@ const STATUS_FILTER_ORDER: GameStatus[] = [
 const props = defineProps<{
   changeGameStatus: (game: Game, status: GameStatus) => void | Promise<void>
   filteredGames: Game[]
+  displayStatusByGameId: ReadonlyMap<string, GameDisplayStatus>
   finishedYearFilter: 'all' | string
   finishedYearOptions: string[]
   gamesCount: number
@@ -37,7 +40,7 @@ const props = defineProps<{
   searchQuery: string
   selectedGameId: string | null
   sortOption: GameSortOption
-  statusFilter: 'all' | GameStatus
+  statusFilter: LibraryStatusFilter
 }>()
 
 const emit = defineEmits<{
@@ -49,7 +52,7 @@ const emit = defineEmits<{
       finishedYearFilter?: 'all' | string
       ownershipFilter?: GameOwnershipFilter
       sortOption?: GameSortOption
-      statusFilter?: 'all' | GameStatus
+      statusFilter?: LibraryStatusFilter
     },
   ]
 }>()
@@ -131,7 +134,6 @@ const listMetadata = computed(() =>
         ...game.tags,
         game.releaseYear ? String(game.releaseYear) : null,
         creditLine(game),
-        formatTimeToBeat(game),
         game.rating !== null ? `${game.rating}/10` : null,
         game.finishedAt ? t('library.finishedOn', { date: game.finishedAt }) : null,
       ].filter((item): item is string => Boolean(item)),
@@ -139,26 +141,20 @@ const listMetadata = computed(() =>
   ),
 )
 
-function formatTimeToBeat(game: Game) {
-  const hours = getTimeToBeatHours(game)
-
-  return hours === null ? null : `~${hours} h TTB`
-}
-
 function creditLine(game: Game) {
   const developer = getDisplayDeveloper(game)
   const publisher = getDisplayPublisher(game)
 
   if (developer && publisher) {
-    return t('detail.igdbCreditsFull', { developers: developer, publishers: publisher })
+    return t('detail.creditsFull', { developers: developer, publishers: publisher })
   }
 
   if (developer) {
-    return t('detail.igdbCreditsDevelopers', { developers: developer })
+    return t('detail.creditsDevelopers', { developers: developer })
   }
 
   if (publisher) {
-    return t('detail.igdbCreditsPublishers', { publishers: publisher })
+    return t('detail.creditsPublishers', { publishers: publisher })
   }
 
   return null
@@ -321,7 +317,7 @@ async function handleStatusChange(
           :class="{ active: statusFilter === option.value }"
           :color="statusFilter === option.value ? 'primary' : undefined"
           :variant="statusFilter === option.value ? 'flat' : 'outlined'"
-          @click="emit('update', { statusFilter: option.value as 'all' | GameStatus })"
+          @click="emit('update', { statusFilter: option.value as LibraryStatusFilter })"
         >
           {{ option.title }}
         </VChip>
@@ -387,7 +383,7 @@ async function handleStatusChange(
                     class="status-pill small"
                     @click.stop
                   >
-                    {{ statusLabel(game.status) }}
+                    {{ statusLabel(displayStatusByGameId.get(game.id) ?? game.status) }}
                   </button>
                 </template>
 

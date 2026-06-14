@@ -12,7 +12,6 @@ function validGame(overrides: Record<string, unknown> = {}): Record<string, unkn
     platform: 'PS5',
     ownershipType: null,
     tags: [],
-    igdbId: null,
     finishedAt: null,
     pausedAt: null,
     nudgeAt: null,

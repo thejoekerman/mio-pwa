@@ -9,6 +9,10 @@ import {
 } from '../types'
 import { isDemoMode } from '../lib/appMode'
 import { DEFAULT_LOCAL_REVIEW_MODEL, isLocalReviewModelId } from '../lib/localReviewModels'
+import {
+  DEFAULT_PLAY_LOG_SHARE_HASHTAGS,
+  DEFAULT_PLAY_LOG_SHARE_TEMPLATE,
+} from '../lib/playLogShare'
 
 const SETTINGS_STORAGE_KEY = isDemoMode ? 'miolog-demo-settings' : 'miolog-settings'
 
@@ -25,9 +29,11 @@ export interface AppSettingsState {
   lastBackupExportedAt: string | null
   backupReminderDismissedAt: string | null
   aiReviewDraftAvailable: boolean
-  igdbMetadataAvailable: boolean
+  syncApiVersion: number
   aiLocalReviewDraftEnabled: boolean
   aiLocalReviewModel: string
+  playLogShareTemplate: string
+  playLogShareHashtags: string
 }
 
 function detectBrowserLanguage(): AppLanguage {
@@ -124,8 +130,8 @@ function readStoredSettings(): Partial<AppSettingsState> {
     }
 
 
-    if (typeof parsed.igdbMetadataAvailable === 'boolean') {
-      nextState.igdbMetadataAvailable = parsed.igdbMetadataAvailable
+    if (typeof parsed.syncApiVersion === 'number' && parsed.syncApiVersion >= 1) {
+      nextState.syncApiVersion = Math.floor(parsed.syncApiVersion)
     }
 
     if (typeof parsed.aiLocalReviewDraftEnabled === 'boolean') {
@@ -134,6 +140,14 @@ function readStoredSettings(): Partial<AppSettingsState> {
 
     if (typeof parsed.aiLocalReviewModel === 'string' && isLocalReviewModelId(parsed.aiLocalReviewModel)) {
       nextState.aiLocalReviewModel = parsed.aiLocalReviewModel
+    }
+
+    if (typeof parsed.playLogShareTemplate === 'string' && parsed.playLogShareTemplate.trim()) {
+      nextState.playLogShareTemplate = parsed.playLogShareTemplate
+    }
+
+    if (typeof parsed.playLogShareHashtags === 'string') {
+      nextState.playLogShareHashtags = parsed.playLogShareHashtags
     }
 
     return nextState
@@ -157,9 +171,11 @@ function createSettingsStore() {
     lastBackupExportedAt: stored.lastBackupExportedAt ?? null,
     backupReminderDismissedAt: stored.backupReminderDismissedAt ?? null,
     aiReviewDraftAvailable: stored.aiReviewDraftAvailable ?? false,
-    igdbMetadataAvailable: stored.igdbMetadataAvailable ?? false,
+    syncApiVersion: stored.syncApiVersion ?? 1,
     aiLocalReviewDraftEnabled: stored.aiLocalReviewDraftEnabled ?? false,
     aiLocalReviewModel: stored.aiLocalReviewModel ?? DEFAULT_LOCAL_REVIEW_MODEL,
+    playLogShareTemplate: stored.playLogShareTemplate ?? DEFAULT_PLAY_LOG_SHARE_TEMPLATE,
+    playLogShareHashtags: stored.playLogShareHashtags ?? DEFAULT_PLAY_LOG_SHARE_HASHTAGS,
   })
 
   watch(
@@ -184,12 +200,21 @@ function createSettingsStore() {
         value.lastBackupExportedAt = null
         value.backupReminderDismissedAt = null
         value.aiReviewDraftAvailable = false
-        value.igdbMetadataAvailable = false
+        value.syncApiVersion = 1
       }
 
       window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(value))
     },
     { deep: true, immediate: true },
+  )
+
+  watch(
+    () => [settings.syncApiBaseUrl, settings.syncToken],
+    ([apiBaseUrl, syncToken], [previousApiBaseUrl, previousSyncToken]) => {
+      if (apiBaseUrl !== previousApiBaseUrl || syncToken !== previousSyncToken) {
+        settings.syncApiVersion = 1
+      }
+    },
   )
 
   function setLanguage(language: AppLanguage) {
@@ -228,8 +253,8 @@ function createSettingsStore() {
     settings.aiReviewDraftAvailable = value
   }
 
-  function setIgdbMetadataAvailable(value: boolean) {
-    settings.igdbMetadataAvailable = value
+  function setSyncApiVersion(value: number) {
+    settings.syncApiVersion = Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1
   }
 
   function setAiLocalReviewDraftEnabled(value: boolean) {
@@ -242,11 +267,17 @@ function createSettingsStore() {
     }
   }
 
+  function setPlayLogShareSettings(template: string, hashtags: string) {
+    settings.playLogShareTemplate = template.trim() || DEFAULT_PLAY_LOG_SHARE_TEMPLATE
+    settings.playLogShareHashtags = hashtags.trim()
+  }
+
   return {
     setAiLocalReviewDraftEnabled,
     setAiLocalReviewModel,
     setAiReviewDraftAvailable,
-    setIgdbMetadataAvailable,
+    setPlayLogShareSettings,
+    setSyncApiVersion,
     setAutoSyncEnabled,
     setBackupReminderDismissedAt,
     setLanguage,
