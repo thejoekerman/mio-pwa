@@ -11,6 +11,7 @@ const router = useRouter()
 const { t } = useI18n()
 const {
   canRateCurrentStatus,
+  addCurrentJourneyToGame,
   formatDate,
   gameForm,
   games,
@@ -27,6 +28,20 @@ const routeGameId = computed(() =>
 )
 const gamePendingDelete = ref<Game | null>(null)
 const deleteDialogOpen = ref(false)
+const duplicateGamePending = ref<Game | null>(null)
+const duplicateDialogOpen = ref(false)
+const duplicateIdentityGame = computed(() => {
+  if (routeGameId.value || !/^Q\d+$/.test(gameForm.wikidataId)) {
+    return null
+  }
+
+  return games.value.find((game) =>
+    game.externalReferences?.some(
+      (reference) =>
+        reference.provider === 'wikidata' && reference.externalId === gameForm.wikidataId,
+    ),
+  ) ?? null
+})
 watch(
   [routeGameId, games],
   ([gameId]) => {
@@ -44,10 +59,52 @@ watch(
 )
 
 async function handleSave() {
+  const duplicate = duplicateIdentityGame.value
+
+  if (duplicate) {
+    duplicateGamePending.value = duplicate
+    duplicateDialogOpen.value = true
+    return
+  }
+
+  await saveAndNavigate()
+}
+
+async function saveAndNavigate() {
   const savedGame = await saveCurrentGame()
 
   if (savedGame) {
     await router.replace({ name: 'game', params: { gameId: savedGame.id } })
+  }
+}
+
+function cancelDuplicateChoice() {
+  duplicateDialogOpen.value = false
+  duplicateGamePending.value = null
+}
+
+function handleDuplicateDialogUpdate(open: boolean) {
+  duplicateDialogOpen.value = open
+
+  if (!open) {
+    duplicateGamePending.value = null
+  }
+}
+
+async function createSeparateGame() {
+  duplicateDialogOpen.value = false
+  duplicateGamePending.value = null
+  await saveAndNavigate()
+}
+
+async function addJourneyToExistingGame() {
+  const game = duplicateGamePending.value
+
+  duplicateDialogOpen.value = false
+  duplicateGamePending.value = null
+
+  if (game && await addCurrentJourneyToGame(game)) {
+    await router.replace({ name: 'game', params: { gameId: game.id } })
   }
 }
 
@@ -131,6 +188,31 @@ async function confirmDelete() {
       @delete="handleDelete"
       @save="handleSave"
     />
+
+    <VDialog
+      :model-value="duplicateDialogOpen"
+      class="confirm-dialog"
+      max-width="440"
+      @update:model-value="handleDuplicateDialogUpdate"
+    >
+      <VCard>
+        <VCardTitle>{{ t('form.duplicateGameTitle') }}</VCardTitle>
+        <VCardText>
+          {{ t('form.duplicateGameBody', { title: duplicateGamePending?.title ?? '' }) }}
+        </VCardText>
+        <VCardActions class="duplicate-game-actions">
+          <VBtn type="button" variant="text" @click="cancelDuplicateChoice">
+            {{ t('form.cancel') }}
+          </VBtn>
+          <VBtn type="button" variant="outlined" color="primary" @click="createSeparateGame">
+            {{ t('form.createSeparateGame') }}
+          </VBtn>
+          <VBtn type="button" color="primary" variant="flat" @click="addJourneyToExistingGame">
+            {{ t('form.addJourneyToExisting') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
 
     <VDialog
       :model-value="deleteDialogOpen"

@@ -635,6 +635,39 @@ describe('useBacklog', () => {
     })
   })
 
+  describe('addCurrentJourneyToGame', () => {
+    it('adds entered Journey details without creating or changing the existing Game', async () => {
+      const game = makeGame({
+        id: 'existing',
+        title: 'Existing Game',
+        status: 'finished',
+        platform: 'Switch',
+        finishedAt: '2025-01-01',
+      })
+      const initialJourney = makeJourney(game)
+      const store = await loadBacklog({ seedGames: [game], seedJourneys: [initialJourney] })
+
+      store.startCreatingGame()
+      store.gameForm.title = 'Provider Title'
+      store.gameForm.status = 'playing'
+      store.gameForm.platform = 'PC'
+      store.gameForm.ownershipType = 'digital'
+      store.gameForm.playTimeHours = '2.5'
+
+      expect(await store.addCurrentJourneyToGame(game)).toBe(true)
+      expect(savedGames).toHaveLength(0)
+      expect(savedJourneys).toHaveLength(2)
+      expect(savedJourneys[1]).toMatchObject({
+        gameId: 'existing',
+        status: 'playing',
+        platform: 'PC',
+        ownershipType: 'digital',
+        playTimeHours: 2.5,
+      })
+      expect(savedJourneys[1].startedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    })
+  })
+
   describe('CSV import', () => {
     it('saves plain games when confirming a reactive preview plan', async () => {
       const store = await loadBacklog()

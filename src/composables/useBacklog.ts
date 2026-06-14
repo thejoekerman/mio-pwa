@@ -1185,6 +1185,72 @@ function createBacklogStore() {
     }
   }
 
+  async function addCurrentJourneyToGame(game: Game) {
+    const ratingInput = gameForm.rating.trim()
+    const parsedRating =
+      ratingInput === '' ? null : Number.parseInt(ratingInput.replace(/[^\d]/g, ''), 10)
+    const normalizedRating =
+      parsedRating === null || Number.isNaN(parsedRating)
+        ? null
+        : Math.min(Math.max(parsedRating, 1), 10)
+    const playTimeInput = gameForm.playTimeHours.trim()
+    const parsedPlayTime =
+      playTimeInput === '' ? null : Number.parseFloat(playTimeInput.replace(',', '.'))
+    const normalizedPlayTime =
+      parsedPlayTime === null || Number.isNaN(parsedPlayTime) || parsedPlayTime < 0
+        ? null
+        : Math.round(parsedPlayTime * 10) / 10
+
+    if (canRateCurrentStatus.value && ratingInput !== '' && normalizedRating === null) {
+      setFeedback(translate(settings.language, 'feedback.ratingInvalid'), 'error')
+      return false
+    }
+
+    if (playTimeInput !== '' && normalizedPlayTime === null) {
+      setFeedback(translate(settings.language, 'feedback.playTimeInvalid'), 'error')
+      return false
+    }
+
+    isSaving.value = true
+
+    try {
+      const now = getNextUpdatedAt(game.updatedAt)
+      const journey: Journey = {
+        id: createId(),
+        gameId: game.id,
+        status: gameForm.status,
+        platform: gameForm.platform.trim(),
+        ownershipType: gameForm.ownershipType || null,
+        priority: gameForm.priority || null,
+        rating: canRateCurrentStatus.value ? normalizedRating : null,
+        review: gameForm.review.trim(),
+        playTimeHours: normalizedPlayTime,
+        startedAt:
+          gameForm.status === 'playing' || gameForm.status === 'ongoing' ? getTodayDate() : null,
+        finishedAt:
+          gameForm.status === 'finished' ? gameForm.finishedAt || getTodayDate() : null,
+        pausedAt:
+          gameForm.status === 'paused' ? gameForm.pausedAt || getTodayDate() : null,
+        nudgeAt: gameForm.status === 'paused' ? gameForm.nudgeAt || null : null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+
+      await saveJourney(journey)
+      markLocalChange()
+      await loadGames()
+      await selectGame(game.id)
+      await selectJourney(journey.id)
+      await unlockEarnedTrophies('user-action')
+      setFeedback(translate(settings.language, 'feedback.journeyAdded', { title: game.title }))
+      scheduleAutoSync()
+      return true
+    } finally {
+      isSaving.value = false
+    }
+  }
+
   async function exportLibraryCsv() {
     await ensureLoaded()
 
@@ -1448,6 +1514,7 @@ function createBacklogStore() {
     latestTrophyUnlockSource,
     trophyViews,
     addSelectedJourneyPlayTime,
+    addCurrentJourneyToGame,
     updateCurrentJourneyStatus,
     updateSelectedJourneyStatus,
     snoozePausedGame,
