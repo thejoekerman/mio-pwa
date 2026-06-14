@@ -19,6 +19,7 @@ function createForm(overrides: Partial<GameFormState> = {}): GameFormState {
     wikipediaTitle: '',
     coverSourceUrl: '',
     coverSourcePageUrl: '',
+    metadataReviewed: false,
     releaseYear: '',
     priority: '',
     developer: '',
@@ -196,6 +197,79 @@ describe('GameFormPanel', () => {
 
     expect(form.title).toBe('My preferred title')
     expect(form.wikidataId).toBe('Q123')
+  })
+
+  it('previews factual metadata and preserves populated fields unless selected', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+
+      if (url.includes('wbsearchentities')) {
+        return {
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            search: [{ id: 'Q123', label: 'Provider title', description: 'video game' }],
+          }),
+        }
+      }
+
+      if (url.includes('wbgetclaims')) {
+        return {
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            claims: {
+              P123: [{ mainsnak: { datavalue: { value: { id: 'Q-publisher' } } } }],
+              P178: [{ mainsnak: { datavalue: { value: { id: 'Q-developer' } } } }],
+              P577: [{ mainsnak: { datavalue: { value: { time: '+1997-01-01T00:00:00Z' } } } }],
+            },
+          }),
+        }
+      }
+
+      if (url.includes('props=labels')) {
+        return {
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            entities: {
+              'Q-developer': { labels: { en: { value: 'Suggested Studio' } } },
+              'Q-publisher': { labels: { en: { value: 'Suggested Publisher' } } },
+            },
+          }),
+        }
+      }
+
+      return {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ entities: {} }),
+      }
+    }))
+    const form = reactive(createForm({
+      developer: 'My Studio',
+      publisher: '',
+      releaseYear: '',
+    }))
+    const wrapper = mountForm(form)
+
+    await wrapper.get('.metadata-assistant-action').trigger('click')
+    await vi.runAllTimersAsync()
+    await wrapper.get('.wikidata-suggestion').trigger('click')
+    await vi.runAllTimersAsync()
+
+    expect(form.developer).toBe('My Studio')
+    expect(form.publisher).toBe('')
+    expect(form.releaseYear).toBe('')
+
+    const rows = wrapper.findAll('.metadata-review-row')
+    expect((rows[0].get('input').element as HTMLInputElement).checked).toBe(true)
+    expect((rows[1].get('input').element as HTMLInputElement).checked).toBe(false)
+    expect((rows[2].get('input').element as HTMLInputElement).checked).toBe(true)
+
+    await wrapper.get('.metadata-review .mini-button').trigger('click')
+
+    expect(form.developer).toBe('My Studio')
+    expect(form.publisher).toBe('Suggested Publisher')
+    expect(form.releaseYear).toBe('1997')
+    expect(form.metadataReviewed).toBe(true)
   })
 
   it('shows a distinct empty result after a successful metadata search', async () => {

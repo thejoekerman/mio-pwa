@@ -123,6 +123,7 @@ function createBacklogStore() {
     wikipediaTitle: '',
     coverSourceUrl: '',
     coverSourcePageUrl: '',
+    metadataReviewed: false,
     releaseYear: '',
     priority: '',
     developer: '',
@@ -506,6 +507,7 @@ function createBacklogStore() {
     gameForm.wikipediaTitle = ''
     gameForm.coverSourceUrl = ''
     gameForm.coverSourcePageUrl = ''
+    gameForm.metadataReviewed = false
     gameForm.releaseYear = ''
     gameForm.priority = ''
     gameForm.developer = ''
@@ -543,6 +545,7 @@ function createBacklogStore() {
     gameForm.coverSourcePageUrl = game.coverSource?.provider === 'wikipedia'
       ? game.coverSource.pageUrl ?? ''
       : ''
+    gameForm.metadataReviewed = false
     gameForm.releaseYear = game.releaseYear ? String(game.releaseYear) : ''
     gameForm.priority = game.priority ?? ''
     gameForm.developer = game.developer ?? ''
@@ -791,7 +794,7 @@ function createBacklogStore() {
         tags: parseTags(gameForm.tags),
         externalReferences,
         metadataReviewedAt:
-          wikidataId !==
+          gameForm.metadataReviewed || wikidataId !==
           (existingExternalReferences.find((reference) => reference.provider === 'wikidata')?.externalId ?? '')
             ? now
             : existingPlain?.metadataReviewedAt ?? null,

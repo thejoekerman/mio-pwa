@@ -131,6 +131,7 @@ function makeDeps(overrides: Partial<Record<string, unknown>> = {}) {
     wikipediaTitle: '',
     coverSourceUrl: '',
     coverSourcePageUrl: '',
+    metadataReviewed: false,
     releaseYear: '',
     developer: '',
     publisher: '',

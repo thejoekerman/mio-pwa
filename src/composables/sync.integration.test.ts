@@ -110,6 +110,7 @@ function makeDeps() {
     wikipediaTitle: '',
     coverSourceUrl: '',
     coverSourcePageUrl: '',
+    metadataReviewed: false,
     releaseYear: '',
     developer: '',
     publisher: '',

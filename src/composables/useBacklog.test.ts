@@ -253,6 +253,24 @@ describe('useBacklog', () => {
       expect(store.games.value.some((g) => g.id === persisted.id)).toBe(true)
     })
 
+    it('updates the reviewed timestamp when metadata is applied to the same Wikidata identity', async () => {
+      const game = makeGame({
+        externalReferences: [{
+          provider: 'wikidata',
+          externalId: 'Q123',
+          url: 'https://www.wikidata.org/wiki/Q123',
+        }],
+        metadataReviewedAt: '2026-01-01T00:00:00.000Z',
+      })
+      const store = await loadBacklog({ seedGames: [game] })
+
+      store.startEditingGame(game)
+      store.gameForm.metadataReviewed = true
+      const saved = await store.saveCurrentGame()
+
+      expect(saved?.metadataReviewedAt).not.toBe('2026-01-01T00:00:00.000Z')
+    })
+
     it('clamps an out-of-range rating to 1–10 for finished games', async () => {
       const store = await loadBacklog()
       store.gameForm.title = 'Inscryption'

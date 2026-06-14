@@ -14,6 +14,7 @@ import {
   getWikipediaCoverSuggestion,
   searchWikidataGames,
   type WikipediaCoverSuggestion,
+  type WikidataGameMetadata,
   type WikidataGameSuggestion,
 } from '../lib/wikidataClient'
 import { addDaysDate } from '../lib/dateUtils'
@@ -48,6 +49,13 @@ const isSearchingWikidata = ref(false)
 const wikidataSearchFailed = ref(false)
 const wikidataSearchCompleted = ref(false)
 const wikipediaCoverSuggestion = ref<WikipediaCoverSuggestion | null>(null)
+const metadataSuggestion = ref<WikidataGameMetadata | null>(null)
+const selectedMetadataFields = ref({
+  developer: false,
+  publisher: false,
+  releaseYear: false,
+  tags: false,
+})
 const isLoadingWikipediaCover = ref(false)
 let wikidataSearchTimer: number | null = null
 let wikidataAbortController: AbortController | null = null
@@ -239,31 +247,59 @@ async function useWikidataSuggestion(suggestion: WikidataGameSuggestion) {
   wikidataSearchFailed.value = false
   wikidataSearchCompleted.value = false
   wikipediaCoverSuggestion.value = null
+  metadataSuggestion.value = null
 
-  const [{ tags, developer, publisher, releaseYear }, coverSuggestion] = isOffline()
+  const [suggestedMetadata, coverSuggestion] = isOffline()
     ? [
-        { tags: [], developer: null, publisher: null, releaseYear: null },
+        { tags: [], developer: null, publisher: null, releaseYear: null } satisfies WikidataGameMetadata,
         null,
-      ] as const
+      ]
     : await Promise.all([
         getWikidataGameMetadata(suggestion.id),
         loadWikipediaCoverSuggestion(suggestion.id),
       ])
 
   wikipediaCoverSuggestion.value = coverSuggestion
+  metadataSuggestion.value = hasMetadataSuggestion(suggestedMetadata) ? suggestedMetadata : null
+  selectedMetadataFields.value = {
+    developer: Boolean(suggestedMetadata.developer && !form.value.developer.trim()),
+    publisher: Boolean(suggestedMetadata.publisher && !form.value.publisher.trim()),
+    releaseYear: suggestedMetadata.releaseYear !== null && !form.value.releaseYear.trim(),
+    tags: suggestedMetadata.tags.length > 0,
+  }
+}
 
-  if (tags.length > 0) {
-    setTags([...selectedTags.value, ...tags])
+function hasMetadataSuggestion(metadata: WikidataGameMetadata) {
+  return Boolean(
+    metadata.developer
+    || metadata.publisher
+    || metadata.releaseYear !== null
+    || metadata.tags.length > 0,
+  )
+}
+
+function applyMetadataSuggestion() {
+  const suggestion = metadataSuggestion.value
+
+  if (!suggestion) {
+    return
   }
-  if (developer && !form.value.developer.trim()) {
-    form.value.developer = developer
+
+  if (selectedMetadataFields.value.developer && suggestion.developer) {
+    form.value.developer = suggestion.developer
   }
-  if (publisher && !form.value.publisher.trim()) {
-    form.value.publisher = publisher
+  if (selectedMetadataFields.value.publisher && suggestion.publisher) {
+    form.value.publisher = suggestion.publisher
   }
-  if (releaseYear !== null && !form.value.releaseYear.trim()) {
-    form.value.releaseYear = String(releaseYear)
+  if (selectedMetadataFields.value.releaseYear && suggestion.releaseYear !== null) {
+    form.value.releaseYear = String(suggestion.releaseYear)
   }
+  if (selectedMetadataFields.value.tags && suggestion.tags.length > 0) {
+    setTags([...selectedTags.value, ...suggestion.tags])
+  }
+
+  form.value.metadataReviewed = true
+  metadataSuggestion.value = null
 }
 
 async function loadWikipediaCoverSuggestion(itemId: string) {
@@ -287,6 +323,7 @@ function useWikipediaCover() {
   form.value.coverSourceUrl = suggestion.imageUrl
   form.value.coverSourcePageUrl = suggestion.pageUrl
   form.value.wikipediaTitle = suggestion.articleTitle
+  form.value.metadataReviewed = true
   wikipediaCoverSuggestion.value = null
 }
 
@@ -376,6 +413,49 @@ function useWikipediaCover() {
             <small>{{ wikidataSuggestionDetails(suggestion) }}</small>
           </button>
         </div>
+      </div>
+
+      <div v-if="metadataSuggestion" class="metadata-review">
+        <div>
+          <strong>{{ t('form.metadataReviewTitle') }}</strong>
+          <p class="field-hint">{{ t('form.metadataReviewHint') }}</p>
+        </div>
+
+        <label v-if="metadataSuggestion.releaseYear" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.releaseYear" type="checkbox" />
+          <span>
+            <small>{{ t('form.releaseYear') }}</small>
+            <strong>{{ form.releaseYear || t('form.metadataEmpty') }} → {{ metadataSuggestion.releaseYear }}</strong>
+          </span>
+        </label>
+
+        <label v-if="metadataSuggestion.developer" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.developer" type="checkbox" />
+          <span>
+            <small>{{ t('form.developer') }}</small>
+            <strong>{{ form.developer || t('form.metadataEmpty') }} → {{ metadataSuggestion.developer }}</strong>
+          </span>
+        </label>
+
+        <label v-if="metadataSuggestion.publisher" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.publisher" type="checkbox" />
+          <span>
+            <small>{{ t('form.publisher') }}</small>
+            <strong>{{ form.publisher || t('form.metadataEmpty') }} → {{ metadataSuggestion.publisher }}</strong>
+          </span>
+        </label>
+
+        <label v-if="metadataSuggestion.tags.length > 0" class="metadata-review-row">
+          <input v-model="selectedMetadataFields.tags" type="checkbox" />
+          <span>
+            <small>{{ t('form.tags') }}</small>
+            <strong>{{ t('form.metadataAddTags', { tags: metadataSuggestion.tags.join(', ') }) }}</strong>
+          </span>
+        </label>
+
+        <button class="mini-button" type="button" @click="applyMetadataSuggestion">
+          {{ t('form.applyMetadata') }}
+        </button>
       </div>
 
       <div v-if="isLoadingWikipediaCover" class="metadata-cover-status field-hint">

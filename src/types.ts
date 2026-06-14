@@ -290,6 +290,7 @@ export interface GameFormState {
   wikipediaTitle: string
   coverSourceUrl: string
   coverSourcePageUrl: string
+  metadataReviewed: boolean
   releaseYear: string
   priority: '' | GamePriority
   developer: string

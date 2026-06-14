@@ -2197,6 +2197,45 @@ h3 {
   margin-top: -4px;
 }
 
+.metadata-review {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.metadata-review p {
+  margin: 3px 0 0;
+}
+
+.metadata-review-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.metadata-review-row input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.metadata-review-row span {
+  display: grid;
+  gap: 2px;
+}
+
+.metadata-review-row small {
+  color: var(--muted);
+}
+
+.metadata-review .mini-button {
+  justify-self: start;
+}
+
 .metadata-cover-suggestion {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
