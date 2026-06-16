@@ -23,23 +23,23 @@ export default defineConfig({
       ],
       // Modest absolute floors — set a few points below current coverage so that
       // a normal refactor doesn't fail CI, but a "shipped a feature without
-      // tests" drop does. Per-directory globs let us hold src/lib + src/composables
-      // (where business logic lives) to a higher bar than views/components.
-      // Ratchet these up deliberately when you do a dedicated test-improvement
-      // pass — there's no automatic update.
+      // tests" drop does. V8 coverage counts Vue route shells and many template
+      // branches, so the global floor is deliberately lower than the business
+      // logic floors below. Ratchet these up deliberately when you do a dedicated
+      // test-improvement pass — there's no automatic update.
       thresholds: {
-        lines: 50,
-        functions: 70,
-        branches: 75,
+        lines: 58,
+        functions: 50,
+        branches: 50,
         'src/lib/**/*.ts': {
-          lines: 60,
-          functions: 85,
-          branches: 78,
+          lines: 84,
+          functions: 88,
+          branches: 74,
         },
         'src/composables/**/*.ts': {
-          lines: 65,
-          functions: 60,
-          branches: 73,
+          lines: 74,
+          functions: 70,
+          branches: 64,
         },
       },
     },

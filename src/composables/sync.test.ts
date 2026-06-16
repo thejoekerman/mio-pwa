@@ -248,6 +248,82 @@ describe('createSyncHandlers', () => {
     expect(deps.isSyncing.value).toBe(false)
   })
 
+  it('requires both sync URL and token before testing or syncing', async () => {
+    const missingUrl = makeDeps({ settings: makeSettings({ syncApiBaseUrl: ' ', syncToken: 'tok' }) })
+    const missingToken = makeDeps({ settings: makeSettings({ syncApiBaseUrl: 'https://example.test', syncToken: ' ' }) })
+
+    await expect(createSyncHandlers(missingUrl).syncNow()).rejects.toThrow(/backend url/i)
+    await expect(createSyncHandlers(missingToken).testSyncConnection()).rejects.toThrow(/sync token/i)
+
+    expect(testSyncConnectionMock).not.toHaveBeenCalled()
+    expect(syncWithBackendMock).not.toHaveBeenCalled()
+  })
+
+  it('can suppress error feedback for automatic sync failures', async () => {
+    syncWithBackendMock.mockRejectedValueOnce(new Error('Server down'))
+    const deps = makeDeps()
+    const { syncNow } = createSyncHandlers(deps)
+
+    await expect(syncNow({ errorFeedback: false })).rejects.toThrow(/server down/i)
+
+    expect(deps.setLastSyncError).toHaveBeenCalledWith(expect.stringMatching(/server down/i))
+    expect(deps.setFeedback).not.toHaveBeenCalledWith(expect.stringMatching(/server down/i), 'error')
+  })
+
+  it('refreshes selected-game state after incoming changes', async () => {
+    const refreshedGame = {
+      id: 'selected',
+      title: 'Refreshed',
+      status: 'playing',
+      rating: null,
+      playTimeHours: null,
+      review: '',
+      platform: '',
+      ownershipType: null,
+      tags: [],
+      finishedAt: null,
+      pausedAt: null,
+      nudgeAt: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      deletedAt: null,
+    } as Game
+    syncWithBackendMock.mockResolvedValueOnce(
+      makeResponse({
+        changes: emptyChanges(),
+        deletions: {
+          games: [{ id: 'old', updatedAt: '2026-01-01T00:00:00.000Z' }],
+          journeys: [],
+          logs: [],
+          earnedTrophies: [],
+        },
+      }),
+    )
+    const deps = makeDeps()
+    deps.games.value = [refreshedGame]
+    deps.selectedGameId.value = 'selected'
+    deps.gameForm.id = 'selected'
+    const { syncNow } = createSyncHandlers(deps)
+
+    await syncNow({ silentSuccess: true })
+
+    expect(deps.loadLogs).toHaveBeenCalledWith('selected')
+    expect(deps.editGame).toHaveBeenCalledWith(refreshedGame)
+    expect(deps.resetForm).not.toHaveBeenCalled()
+  })
+
+  it('resets the form when the edited game disappears during sync recovery', async () => {
+    syncWithBackendMock.mockResolvedValueOnce(makeResponse({ recoveryRequired: true }))
+    const deps = makeDeps()
+    deps.gameForm.id = 'missing'
+    const { syncNow } = createSyncHandlers(deps)
+
+    await syncNow({ silentSuccess: true })
+
+    expect(deps.ensureLoaded).toHaveBeenCalledWith(true)
+    expect(deps.resetForm).toHaveBeenCalledOnce()
+  })
+
   it('tests and stores connection capabilities without syncing', async () => {
     const deps = makeDeps()
     const { testSyncConnection: testConnection } = createSyncHandlers(deps)
@@ -259,6 +335,18 @@ describe('createSyncHandlers', () => {
     expect(syncWithBackendMock).not.toHaveBeenCalled()
   })
 
+  it('records connection test failures', async () => {
+    testSyncConnectionMock.mockRejectedValueOnce(new Error('Nope'))
+    const deps = makeDeps()
+    const { testSyncConnection: testConnection } = createSyncHandlers(deps)
+
+    await expect(testConnection()).rejects.toThrow(/nope/i)
+
+    expect(deps.setLastSyncError).toHaveBeenCalledWith(expect.stringMatching(/nope/i))
+    expect(deps.setFeedback).toHaveBeenCalledWith(expect.stringMatching(/nope/i), 'error')
+    expect(deps.isTestingSyncConnection.value).toBe(false)
+  })
+
   it('refreshes capabilities in the background', async () => {
     const deps = makeDeps()
     const { refreshSyncCapabilities } = createSyncHandlers(deps)
@@ -267,5 +355,60 @@ describe('createSyncHandlers', () => {
 
     expect(deps.setAiReviewDraftAvailable).toHaveBeenCalledWith(true)
     expect(deps.setSyncApiVersion).toHaveBeenCalledWith(3)
+  })
+
+  it('skips duplicate or unconfigured capability refreshes', async () => {
+    const alreadyStarted = makeDeps({ capabilityRefreshStarted: ref(true) })
+    const unconfigured = makeDeps({ settings: makeSettings({ syncToken: '' }) })
+
+    await createSyncHandlers(alreadyStarted).refreshSyncCapabilities()
+    await createSyncHandlers(unconfigured).refreshSyncCapabilities()
+
+    expect(testSyncConnectionMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps previous capabilities when background refresh fails', async () => {
+    testSyncConnectionMock.mockRejectedValueOnce(new Error('offline'))
+    const deps = makeDeps()
+
+    await createSyncHandlers(deps).refreshSyncCapabilities()
+
+    expect(deps.capabilityRefreshStarted.value).toBe(true)
+    expect(deps.setSyncApiVersion).not.toHaveBeenCalled()
+  })
+
+  it('schedules automatic sync only when the v3 connection is configured', async () => {
+    vi.useFakeTimers()
+    const deps = makeDeps({ settings: makeSettings({ autoSyncEnabled: true, syncApiVersion: 3 }) })
+    const { scheduleAutoSync } = createSyncHandlers(deps)
+
+    scheduleAutoSync(10)
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(syncWithBackendMock).toHaveBeenCalledOnce()
+    vi.useRealTimers()
+  })
+
+  it('starts focus and online auto-sync listeners only once', async () => {
+    const deps = makeDeps({ settings: makeSettings({ autoSyncEnabled: true, syncApiVersion: 3 }) })
+    const { startAutoSync } = createSyncHandlers(deps)
+
+    startAutoSync()
+    startAutoSync()
+    await vi.waitFor(() => {
+      expect(syncWithBackendMock).toHaveBeenCalledTimes(1)
+    })
+
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => {
+      expect(syncWithBackendMock).toHaveBeenCalledTimes(2)
+    })
+
+    window.dispatchEvent(new Event('online'))
+    await vi.waitFor(() => {
+      expect(syncWithBackendMock).toHaveBeenCalledTimes(3)
+    })
+
+    expect(deps.autoSyncStarted.value).toBe(true)
   })
 })
