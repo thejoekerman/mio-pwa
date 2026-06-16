@@ -831,7 +831,7 @@ function createBacklogStore() {
   }
 
   async function removeGame(game: Game) {
-    await deleteGame(game.id)
+    await deleteGame(game.id, !isSyncConfigured.value)
     removeGameInPlace(game.id)
     allLogs.value = allLogs.value.filter((log) => log.gameId !== game.id)
     totalPlayLogCount.value = allLogs.value.length
@@ -856,7 +856,7 @@ function createBacklogStore() {
       return false
     }
 
-    const deleted = await deleteJourney(journey.id)
+    const deleted = await deleteJourney(journey.id, !isSyncConfigured.value)
     if (!deleted) {
       return false
     }

@@ -11,6 +11,7 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function emptyRequest(): SyncRequest {
   return {
+    protocolVersion: 3,
     cursor: null,
     full: true,
     changes: { games: [], journeys: [], logs: [], earnedTrophies: [] },

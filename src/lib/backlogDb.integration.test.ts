@@ -346,6 +346,18 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       expect(await getAllGames(true)).toHaveLength(0)
     })
 
+    it('hard-deletes games immediately for local-only libraries', async () => {
+      await saveGame(makeGame({ id: 'local-only' }))
+      await saveLogEntry(makeLog({ id: 'local-log', gameId: 'local-only' }))
+
+      await deleteGame('local-only', true)
+
+      expect(await getAllCanonicalGames(true)).toEqual([])
+      expect(await getAllJourneys(true)).toEqual([])
+      expect(await getAllJourneyLogs(true)).toEqual([])
+      expect((await createSyncRequest('server|user:1')).request.changes.games).toEqual([])
+    })
+
     it('deleteJourney tombstones the Journey and its logs but preserves the Game', async () => {
       await saveGame(makeGame({ id: 'journey-delete' }))
       await saveJourney({
@@ -675,6 +687,67 @@ describe('backlogDb (Dexie / fake-indexeddb)', () => {
       expect(changedIdentity.request.cursor).toBeNull()
       expect(changedIdentity.request.changes.games).toHaveLength(1)
       expect(changedIdentity.request.changes.journeys).toHaveLength(1)
+    })
+
+    it('hard-deletes local tombstones after the server acknowledges compact deletion markers', async () => {
+      await saveGame(makeGame({ id: 'delete-after-sync' }))
+      await deleteGame('delete-after-sync')
+      const prepared = await createSyncRequest('server|user:1')
+      const deletedAt = prepared.request.changes.games[0].updatedAt
+
+      await applySyncResponse('server|user:1', prepared.submitted, {
+        cursor: 5,
+        acknowledged: {
+          games: ['delete-after-sync'],
+          journeys: prepared.request.changes.journeys.map(({ id }) => id),
+          logs: [],
+          earnedTrophies: [],
+        },
+        changes: { games: [], journeys: [], logs: [], earnedTrophies: [] },
+        deletions: {
+          games: [{ id: 'delete-after-sync', updatedAt: deletedAt }],
+          journeys: prepared.request.changes.journeys.map(({ id, updatedAt }) => ({ id, updatedAt })),
+          logs: [],
+          earnedTrophies: [],
+        },
+        totals: { games: 0, journeys: 0, logs: 0 },
+        syncedAt: '2026-02-01T00:00:00.000Z',
+      })
+
+      expect(await getAllCanonicalGames(true)).toEqual([])
+      expect(await getAllJourneys(true)).toEqual([])
+      expect((await createSyncRequest('server|user:1')).request.changes.games).toEqual([])
+    })
+
+    it('replaces stale local sync data when the server requires authoritative recovery', async () => {
+      await saveGame(makeGame({ id: 'stale', title: 'Stale local' }))
+      const first = await createSyncRequest('server|user:1')
+      const serverGame = { ...first.request.changes.games[0], id: 'server-only', title: 'Server only' }
+      const serverJourney = {
+        ...first.request.changes.journeys[0],
+        id: 'server-only:journey',
+        gameId: 'server-only',
+      }
+
+      await applySyncResponse('server|user:1', first.submitted, {
+        cursor: 20,
+        recoveryRequired: true,
+        acknowledged: { games: [], journeys: [], logs: [], earnedTrophies: [] },
+        changes: {
+          games: [serverGame],
+          journeys: [serverJourney],
+          logs: [],
+          earnedTrophies: [],
+        },
+        totals: { games: 1, journeys: 1, logs: 0 },
+        syncedAt: '2026-02-01T00:00:00.000Z',
+      })
+
+      expect((await getAllCanonicalGames(true)).map(({ id }) => id)).toEqual(['server-only'])
+      const next = await createSyncRequest('server|user:1')
+      expect(next.request.full).toBe(false)
+      expect(next.request.cursor).toBe(20)
+      expect(next.request.changes).toEqual({ games: [], journeys: [], logs: [], earnedTrophies: [] })
     })
   })
 })

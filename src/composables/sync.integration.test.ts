@@ -96,7 +96,7 @@ function makeSettings(): AppSettingsState {
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,
     aiReviewDraftAvailable: false,
-    syncApiVersion: 2,
+    syncApiVersion: 3,
     aiLocalReviewDraftEnabled: false,
     aiLocalReviewModel: '',
     playLogShareTemplate: '{title}\n\n{log}\n\n{hashtags}',
@@ -157,7 +157,7 @@ describe('incremental sync integration (real Dexie via fake-indexeddb)', () => {
   beforeEach(async () => {
     syncWithBackendMock.mockReset()
     testSyncConnectionMock.mockReset().mockResolvedValue({
-      version: 2,
+      version: 3,
       user: { id: 1, email: null, displayName: 'Mio' },
       capabilities: { reviewDraft: true },
     })

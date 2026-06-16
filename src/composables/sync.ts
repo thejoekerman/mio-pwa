@@ -77,7 +77,7 @@ export function createSyncHandlers(deps: SyncDeps) {
   }
 
   function canAttemptSync() {
-    return canRequestConnection() && settings.syncApiVersion >= 2
+    return canRequestConnection() && settings.syncApiVersion >= 3
   }
 
   function scheduleAutoSync(delay = 1400) {
@@ -114,7 +114,7 @@ export function createSyncHandlers(deps: SyncDeps) {
     setAiReviewDraftAvailable(connection.capabilities.reviewDraft)
     setSyncApiVersion(syncApiVersion)
 
-    if (syncApiVersion < 2) {
+    if (syncApiVersion < 3) {
       throw new Error(translate(settings.language, 'feedback.syncVersionBlocked'))
     }
 
@@ -131,9 +131,13 @@ export function createSyncHandlers(deps: SyncDeps) {
       response.changes.games.length +
       response.changes.journeys.length +
       response.changes.logs.length +
-      response.changes.earnedTrophies.length
+      response.changes.earnedTrophies.length +
+      (response.deletions?.games.length ?? 0) +
+      (response.deletions?.journeys.length ?? 0) +
+      (response.deletions?.logs.length ?? 0) +
+      (response.deletions?.earnedTrophies.length ?? 0)
 
-    if (receivedChanges > 0) {
+    if (receivedChanges > 0 || response.recoveryRequired) {
       await ensureLoaded(true)
 
       if (selectedGameId.value) {

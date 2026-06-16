@@ -240,7 +240,20 @@ export interface SyncChanges {
   earnedTrophies: EarnedTrophy[]
 }
 
+export interface SyncDeletion {
+  id: string
+  updatedAt: string
+}
+
+export interface SyncDeletions {
+  games: SyncDeletion[]
+  journeys: SyncDeletion[]
+  logs: SyncDeletion[]
+  earnedTrophies: SyncDeletion[]
+}
+
 export interface SyncRequest {
+  protocolVersion: 3
   cursor: number | null
   full: boolean
   changes: SyncChanges
@@ -271,8 +284,10 @@ export interface SyncConnectionResponse {
 
 export interface SyncResponse {
   cursor: number
+  recoveryRequired?: boolean
   acknowledged: SyncAcknowledgements
   changes: SyncChanges
+  deletions?: SyncDeletions
   totals: {
     games: number
     journeys: number

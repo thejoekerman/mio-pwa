@@ -49,6 +49,7 @@ const emptyChanges = () => ({
 
 function makeRequest(): SyncRequest {
   return {
+    protocolVersion: 3,
     cursor: null,
     full: true,
     changes: emptyChanges(),
@@ -157,7 +158,7 @@ describe('createSyncHandlers', () => {
     })
     syncWithBackendMock.mockReset().mockResolvedValue(makeResponse())
     testSyncConnectionMock.mockReset().mockResolvedValue({
-      version: 2,
+      version: 3,
       user: { id: 7, email: null, displayName: 'Mio' },
       capabilities: { reviewDraft: true },
     })
@@ -171,7 +172,7 @@ describe('createSyncHandlers', () => {
     const deps = makeDeps()
     const { syncNow } = createSyncHandlers(deps)
 
-    await expect(syncNow()).rejects.toThrow(/sync API v2 is required/i)
+    await expect(syncNow()).rejects.toThrow(/sync API v3 is required/i)
     expect(createSyncRequestMock).not.toHaveBeenCalled()
     expect(syncWithBackendMock).not.toHaveBeenCalled()
   })
@@ -230,7 +231,7 @@ describe('createSyncHandlers', () => {
     await syncNow()
 
     expect(deps.setAiReviewDraftAvailable).toHaveBeenCalledWith(true)
-    expect(deps.setSyncApiVersion).toHaveBeenCalledWith(2)
+    expect(deps.setSyncApiVersion).toHaveBeenCalledWith(3)
     expect(deps.setLastSyncedAt).toHaveBeenCalledWith('2026-05-28T12:00:00.000Z')
     expect(deps.setLastSyncError).toHaveBeenCalledWith(null)
     expect(deps.setFeedback).toHaveBeenCalledWith(expect.any(String))
@@ -254,7 +255,7 @@ describe('createSyncHandlers', () => {
     await testConnection()
 
     expect(deps.setAiReviewDraftAvailable).toHaveBeenCalledWith(true)
-    expect(deps.setSyncApiVersion).toHaveBeenCalledWith(2)
+    expect(deps.setSyncApiVersion).toHaveBeenCalledWith(3)
     expect(syncWithBackendMock).not.toHaveBeenCalled()
   })
 
@@ -265,6 +266,6 @@ describe('createSyncHandlers', () => {
     await refreshSyncCapabilities()
 
     expect(deps.setAiReviewDraftAvailable).toHaveBeenCalledWith(true)
-    expect(deps.setSyncApiVersion).toHaveBeenCalledWith(2)
+    expect(deps.setSyncApiVersion).toHaveBeenCalledWith(3)
   })
 })
