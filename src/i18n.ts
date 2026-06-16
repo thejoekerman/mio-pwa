@@ -80,7 +80,7 @@ const messages = {
     statsView: {
       kicker: 'Stats',
       title: 'Your MioLog',
-      body: 'A softer look at the shape of your gaming journal.',
+      body: 'Mio-chan has been quietly keeping tabs on your gaming journal.',
       library: 'Library',
       playHistory: 'Play history',
       rightNow: 'Right now',
@@ -729,7 +729,7 @@ const messages = {
     statsView: {
       kicker: 'Statistik',
       title: 'Dein MioLog',
-      body: 'Ein sanfter Blick auf die Form deines Gaming-Journals.',
+      body: 'Mio-chan hat still mitgeschrieben und behält dein Gaming-Journal im Blick.',
       library: 'Bibliothek',
       playHistory: 'Spielverlauf',
       rightNow: 'Gerade jetzt',
@@ -1377,7 +1377,7 @@ const messages = {
       statsView: {
         kicker: '統計',
         title: 'あなたのMioLog',
-        body: 'あなたのゲームジャーナルの形をやさしく眺めます。',
+        body: 'Mioちゃんがあなたのゲームジャーナルを静かに見守っていました。',
         library: 'ライブラリ',
         playHistory: 'プレイ履歴',
         rightNow: '現在',
