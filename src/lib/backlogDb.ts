@@ -17,6 +17,8 @@ import {
   type PendingSyncRecord,
   type SyncAcknowledgements,
   type SyncChanges,
+  type SyncDeletion,
+  type SyncDeletions,
   type SyncEntity,
   type SyncRequest,
   type SyncResponse,
@@ -416,12 +418,31 @@ export async function saveGameMetadata(game: Game) {
   })
 }
 
-export async function deleteGame(gameId: string) {
+export async function deleteGame(gameId: string, hardDelete = false) {
   await db.transaction('rw', db.games, db.journeys, db.logs, db.pendingSyncRecords, async () => {
     const now = new Date().toISOString()
     const game = await db.games.get(gameId)
 
     if (!game) {
+      return
+    }
+
+    const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
+    const journeyIds = journeys.map((journey) => journey.id)
+
+    if (hardDelete) {
+      const logs = (await Promise.all(
+        journeyIds.map((journeyId) => db.logs.where('journeyId').equals(journeyId).toArray()),
+      )).flat()
+      await db.logs.bulkDelete(logs.map(({ id }) => id))
+      await db.journeys.bulkDelete(journeyIds)
+      await db.games.delete(gameId)
+      await db.pendingSyncRecords.bulkDelete([
+        pendingSyncKey('game', gameId),
+        ...journeyIds.map((id) => pendingSyncKey('journey', id)),
+        ...logs.map(({ id }) => pendingSyncKey('log', id)),
+      ])
+
       return
     }
 
@@ -433,8 +454,6 @@ export async function deleteGame(gameId: string) {
     await db.games.put(deletedGame)
     await queueSyncRecords('game', [deletedGame])
 
-    const journeys = await db.journeys.where('gameId').equals(gameId).toArray()
-    const journeyIds = journeys.map((journey) => journey.id)
     const deletedJourneys = journeys.map((journey) => ({
       ...journey,
       updatedAt: now,
@@ -462,7 +481,7 @@ export async function deleteGame(gameId: string) {
   })
 }
 
-export async function deleteJourney(journeyId: string) {
+export async function deleteJourney(journeyId: string, hardDelete = false) {
   return db.transaction('rw', db.journeys, db.logs, db.pendingSyncRecords, async () => {
     const now = new Date().toISOString()
     const journey = await db.journeys.get(journeyId)
@@ -476,11 +495,22 @@ export async function deleteJourney(journeyId: string) {
       return false
     }
 
+    const logs = await db.logs.where('journeyId').equals(journeyId).toArray()
+    if (hardDelete) {
+      await db.logs.bulkDelete(logs.map(({ id }) => id))
+      await db.journeys.delete(journeyId)
+      await db.pendingSyncRecords.bulkDelete([
+        pendingSyncKey('journey', journeyId),
+        ...logs.map(({ id }) => pendingSyncKey('log', id)),
+      ])
+
+      return true
+    }
+
     const deletedJourney = { ...journey, updatedAt: now, deletedAt: now }
     await db.journeys.put(deletedJourney)
     await queueSyncRecords('journey', [deletedJourney])
 
-    const logs = await db.logs.where('journeyId').equals(journeyId).toArray()
     const deletedLogs = logs.map((logEntry) => ({ ...logEntry, updatedAt: now, deletedAt: now }))
     if (deletedLogs.length > 0) {
       await db.logs.bulkPut(deletedLogs)
@@ -1052,6 +1082,13 @@ const emptySyncChanges = (): SyncChanges => ({
   earnedTrophies: [],
 })
 
+const emptySyncDeletions = (): SyncDeletions => ({
+  games: [],
+  journeys: [],
+  logs: [],
+  earnedTrophies: [],
+})
+
 function pendingRecordsForChanges(changes: SyncChanges) {
   return [
     ...changes.games.map((record) => pendingSyncRecord('game', record)),
@@ -1107,6 +1144,7 @@ export async function createSyncRequest(serverIdentity: string): Promise<{
 
   return {
     request: {
+      protocolVersion: 3,
       cursor: full ? null : state.serverCursor,
       full,
       changes,
@@ -1154,6 +1192,25 @@ export async function applySyncResponse(
     'rw',
     [db.games, db.journeys, db.logs, db.earnedTrophies, db.pendingSyncRecords, db.syncStates],
     async () => {
+      if (response.recoveryRequired) {
+        await db.logs.clear()
+        await db.journeys.clear()
+        await db.games.clear()
+        await db.earnedTrophies.clear()
+        await db.pendingSyncRecords.clear()
+        await db.games.bulkPut(response.changes.games)
+        await db.journeys.bulkPut(response.changes.journeys)
+        await db.logs.bulkPut(response.changes.logs)
+        await db.earnedTrophies.bulkPut(response.changes.earnedTrophies)
+        await db.syncStates.put({
+          id: 'active',
+          serverIdentity,
+          serverCursor: response.cursor,
+        })
+
+        return
+      }
+
       const games = await recordsWonByServer(response.changes.games, (id) => db.games.get(id))
       const journeys = await recordsWonByServer(response.changes.journeys, (id) => db.journeys.get(id))
       const logs = await recordsWonByServer(response.changes.logs, (id) => db.logs.get(id))
@@ -1166,6 +1223,17 @@ export async function applySyncResponse(
       await db.journeys.bulkPut(journeys)
       await db.logs.bulkPut(logs)
       await db.earnedTrophies.bulkPut(earnedTrophies)
+
+      const deletions = response.deletions ?? emptySyncDeletions()
+      await applyServerDeletions(deletions.logs, (id) => db.logs.get(id), (id) => db.logs.delete(id), 'log')
+      await applyServerDeletions(deletions.journeys, (id) => db.journeys.get(id), (id) => db.journeys.delete(id), 'journey')
+      await applyServerDeletions(deletions.games, (id) => db.games.get(id), (id) => db.games.delete(id), 'game')
+      await applyServerDeletions(
+        deletions.earnedTrophies,
+        (id) => db.earnedTrophies.get(id),
+        (id) => db.earnedTrophies.delete(id),
+        'earnedTrophy',
+      )
 
       for (const acknowledged of acknowledgedKeys(submitted, response.acknowledged)) {
         const pending = await db.pendingSyncRecords.get(acknowledged.key)
@@ -1181,4 +1249,19 @@ export async function applySyncResponse(
       })
     },
   )
+}
+
+async function applyServerDeletions<T extends { id: string; updatedAt: string }>(
+  deletions: SyncDeletion[],
+  getExisting: (id: string) => Promise<T | undefined>,
+  deleteRecord: (id: string) => Promise<unknown>,
+  entity: SyncEntity,
+) {
+  for (const deletion of deletions) {
+    const existing = await getExisting(deletion.id)
+    if (existing && existing.updatedAt <= deletion.updatedAt) {
+      await deleteRecord(deletion.id)
+      await db.pendingSyncRecords.delete(pendingSyncKey(entity, deletion.id))
+    }
+  }
 }

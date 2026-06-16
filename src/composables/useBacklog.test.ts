@@ -211,6 +211,38 @@ describe('useBacklog', () => {
       expect(store.gameForm.status).toBe('finished')
       expect(store.gameForm.review).toBe('First run')
     })
+
+    it('keeps date fields aligned with the selected status', async () => {
+      const store = await loadBacklog()
+
+      store.gameForm.rating = '8'
+      store.gameForm.status = 'finished'
+      await nextTick()
+
+      expect(store.gameForm.finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+      store.gameForm.status = 'paused'
+      await nextTick()
+
+      expect(store.gameForm.rating).toBe('')
+      expect(store.gameForm.finishedAt).toBe('')
+      expect(store.gameForm.pausedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(store.gameForm.nudgeAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+      store.gameForm.pausedAt = '2026-01-01'
+      store.gameForm.nudgeAt = '2026-02-01'
+      store.gameForm.status = 'ongoing'
+      await nextTick()
+
+      expect(store.gameForm.pausedAt).toBe('')
+      expect(store.gameForm.nudgeAt).toBe('')
+    })
+
+    it('formats dates with the active app language', async () => {
+      const store = await loadBacklog()
+
+      expect(store.formatDate('2026-06-16T12:30:00.000Z')).toContain('2026')
+    })
   })
 
   describe('saveCurrentGame', () => {

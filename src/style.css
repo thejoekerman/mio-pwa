@@ -1918,6 +1918,10 @@ h3 {
   gap: 22px;
 }
 
+.stats-section--headline {
+  gap: 10px;
+}
+
 .stats-section h2 {
   margin: 0;
   font-size: 1rem;
@@ -1944,6 +1948,94 @@ h3 {
 
 .stats-kpi-wide {
   grid-column: span 2;
+}
+
+.stats-chart-grid {
+  display: grid;
+  grid-auto-flow: dense;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.stats-chart-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent),
+    rgba(255, 255, 255, 0.03);
+}
+
+.stats-chart-card--wide {
+  grid-column: span 2;
+}
+
+.stats-chart-card h2,
+.stats-chart-card p {
+  margin: 0;
+}
+
+.stats-chart-card h2 {
+  font-size: 1rem;
+}
+
+.stats-chart-card p {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.stats-chart {
+  position: relative;
+  min-width: 0;
+  min-height: 260px;
+}
+
+.stats-chart canvas {
+  max-width: 100% !important;
+}
+
+.stats-chart--doughnut {
+  min-height: 280px;
+}
+
+.stats-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  border: 1px dashed color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 18px;
+}
+
+@media (max-width: 760px) {
+  .stats-chart-grid,
+  .stats-chart-card--wide {
+    grid-template-columns: 1fr;
+    grid-column: auto;
+  }
+
+  .stats-chart,
+  .stats-chart--doughnut {
+    min-height: 230px;
+  }
+}
+
+@media (max-width: 420px) {
+  .stats-kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  }
+
+  .stats-chart-card {
+    padding: 14px;
+  }
+
+  .stats-chart,
+  .stats-chart--doughnut {
+    min-height: 210px;
+  }
 }
 
 .trophy-stats-grid {
@@ -3746,10 +3838,19 @@ textarea:focus {
 :root[data-theme='polar'] .trophy-shelf-card,
 :root[data-theme='polar'] .home-ai-suggestion,
 :root[data-theme='polar'] .wrapped-stat,
+:root[data-theme='polar'] .stats-chart-card,
 :root[data-theme='polar'] .log-entry,
 :root[data-theme='polar'] .wrapped-year-chip,
 :root[data-theme='polar'] .tag-list li {
   background: rgba(0, 80, 120, 0.05);
+}
+
+:root[data-theme='polar'] .stats-chart-card {
+  border-color: rgba(0, 100, 150, 0.2);
+}
+
+:root[data-theme='polar'] .stats-chart-card p {
+  color: var(--text);
 }
 
 :root[data-theme='polar'] .status-pill,
@@ -3767,7 +3868,8 @@ textarea:focus {
 
 :root[data-theme='polar'] .more-details-panel,
 :root[data-theme='polar'] .settings-placeholder,
-:root[data-theme='polar'] .empty-state {
+:root[data-theme='polar'] .empty-state,
+:root[data-theme='polar'] .stats-empty {
   background: rgba(0, 80, 120, 0.03);
   border-color: rgba(0, 100, 150, 0.2);
 }
