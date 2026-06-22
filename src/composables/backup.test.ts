@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { reactive, ref } from 'vue'
+import { ensureLocaleLoaded } from '../i18n'
 import type { AppSettingsState } from './useSettings'
 import type { BackupData } from '../types'
 
@@ -144,6 +145,9 @@ describe('createBackupHandlers', () => {
 
     it('formats the feedback message in the active language', async () => {
       importBackupDataMock.mockResolvedValue({ games: 5, logs: 9, earnedTrophies: 0 })
+      // German messages are now a lazily-loaded chunk; load it before asserting
+      // translated output (the app awaits this at startup via main.ts).
+      await ensureLocaleLoaded('de')
 
       const deps = makeDeps({ settings: makeSettings('de') })
       const { importBackup } = createBackupHandlers(deps)

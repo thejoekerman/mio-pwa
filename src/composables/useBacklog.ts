@@ -28,12 +28,10 @@ import { getDisplayDeveloper, getDisplayPublisher, normalizeReleaseYear } from '
 import { createTrophyViews } from '../lib/trophies'
 import { addDaysDate, getTodayDate, isAtLeastDaysOld, getNextUpdatedAt } from '../lib/dateUtils'
 import { isOnline } from '../lib/network'
-import {
-  createLibraryCsv,
-  createLibraryCsvTemplate,
-  parseLibraryCsvImport,
-  type LibraryCsvImportPlan,
-} from '../lib/libraryCsv'
+// `libraryCsv` pulls in papaparse; it is only needed for the rare Settings
+// import/export flows, so it is dynamically imported inside those methods to
+// keep it out of the eager store chunk.
+import type { LibraryCsvImportPlan } from '../lib/libraryCsv'
 import {
   detectWebGpuSupport,
   hasLocalReviewModelForLanguage,
@@ -166,11 +164,30 @@ function createBacklogStore() {
         }
       : game
   })
+  // Group every journey by its Game in a single pass so consumers can look up a
+  // Game's journeys in O(1) instead of rescanning the whole journey list per
+  // Game (which made library filtering O(games × journeys) on each keystroke).
+  // Deleted journeys are kept here; each consumer applies its own filtering.
+  const journeysByGameId = computed(() => {
+    const map = new Map<string, Journey[]>()
+
+    for (const journey of journeys.value) {
+      const existing = map.get(journey.gameId)
+
+      if (existing) {
+        existing.push(journey)
+      } else {
+        map.set(journey.gameId, [journey])
+      }
+    }
+
+    return map
+  })
   const displayStatusByGameId = computed(
     () => new Map(
       games.value.map((game) => [
         game.id,
-        getGameDisplayStatus(journeys.value.filter((journey) => journey.gameId === game.id))
+        getGameDisplayStatus(journeysByGameId.value.get(game.id) ?? [])
           ?? game.status,
       ]),
     ),
@@ -238,8 +255,8 @@ function createBacklogStore() {
     const query = searchQuery.value.trim().toLowerCase()
 
     const matchingGames = games.value.filter((game) => {
-      const gameJourneys = journeys.value.filter(
-        (journey) => journey.gameId === game.id && journey.deletedAt === null,
+      const gameJourneys = (journeysByGameId.value.get(game.id) ?? []).filter(
+        (journey) => journey.deletedAt === null,
       )
       const currentJourney = getCurrentJourney(gameJourneys)
       const displayStatus = displayStatusByGameId.value.get(game.id)
@@ -274,7 +291,7 @@ function createBacklogStore() {
       return matchesStatus && matchesOwnership && matchesFinishedYear && matchesQuery
     })
 
-    return [...matchingGames].sort((left, right) => {
+    return matchingGames.sort((left, right) => {
       switch (sortOption.value) {
         case 'title-asc':
           return left.title.localeCompare(right.title)
@@ -1200,6 +1217,7 @@ function createBacklogStore() {
 
   async function exportLibraryCsv() {
     await ensureLoaded()
+    const { createLibraryCsv } = await import('../lib/libraryCsv')
 
     return {
       csv: createLibraryCsv(games.value.map(toPlainGame)),
@@ -1207,12 +1225,15 @@ function createBacklogStore() {
     }
   }
 
-  function exportLibraryCsvTemplate() {
+  async function exportLibraryCsvTemplate() {
+    const { createLibraryCsvTemplate } = await import('../lib/libraryCsv')
+
     return createLibraryCsvTemplate()
   }
 
   async function previewLibraryCsvImport(rawCsv: string) {
     await ensureLoaded()
+    const { parseLibraryCsvImport } = await import('../lib/libraryCsv')
 
     return parseLibraryCsvImport(rawCsv, games.value.map(toPlainGame), {
       createId,
