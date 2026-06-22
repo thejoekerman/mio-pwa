@@ -696,6 +696,14 @@ describe('useBacklog', () => {
   })
 
   describe('CSV import', () => {
+    it('loads the CSV helper on demand when exporting its template', async () => {
+      const store = await loadBacklog()
+
+      await expect(store.exportLibraryCsvTemplate()).resolves.toContain(
+        'title,status,platform,rating,playTimeHours,finishedDate,coverUrl,mioId',
+      )
+    })
+
     it('saves plain games when confirming a reactive preview plan', async () => {
       const store = await loadBacklog()
       const plan = await store.previewLibraryCsvImport(

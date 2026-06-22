@@ -349,10 +349,10 @@ async function handleExport() {
   backupNotice.value = t('feedback.backupExportedNotice', { date: payload.exportedAt.slice(0, 10) })
 }
 
-function handleTemplateCsvExport() {
+async function handleTemplateCsvExport() {
   downloadTextFile(
     'miolog-library-template.csv',
-    exportLibraryCsvTemplate(),
+    await exportLibraryCsvTemplate(),
     'text/csv;charset=utf-8',
   )
   csvNoticeTone.value = 'success'
