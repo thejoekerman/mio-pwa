@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import HomeView from './HomeView.vue'
-import type { Game, Journey } from '../types'
+import type { Game, Journey, LogEntry } from '../types'
 import type { FinishedJourneyEntry } from '../lib/journeyAnalytics'
 import type { Ref } from 'vue'
 
@@ -18,14 +18,16 @@ interface HomeBacklogState {
   games: Ref<Game[]>
   journeys: Ref<Journey[]>
   logDraft: Ref<string>
-  logs: Ref<unknown[]>
-  recentLogs: Ref<unknown[]>
+  logs: Ref<LogEntry[]>
+  recentLogs: Ref<LogEntry[]>
   saveCurrentLog: ReturnType<typeof vi.fn>
   selectGame: ReturnType<typeof vi.fn>
+  selectedJourney: Ref<Journey | null>
   setFeedback: ReturnType<typeof vi.fn>
   shouldShowBackupReminder: Ref<boolean>
   snoozePausedGame: ReturnType<typeof vi.fn>
   trophyViews: Ref<unknown[]>
+  updateLogEntry: ReturnType<typeof vi.fn>
   updateCurrentJourneyStatus: ReturnType<typeof vi.fn>
 }
 
@@ -79,14 +81,16 @@ vi.mock('../composables/useBacklog', async () => {
     games: ref<Game[]>([]),
     journeys: ref<Journey[]>([]),
     logDraft: ref(''),
-    logs: ref([]),
-    recentLogs: ref([]),
+    logs: ref<LogEntry[]>([]),
+    recentLogs: ref<LogEntry[]>([]),
     saveCurrentLog: vi.fn(),
     selectGame: vi.fn(),
+    selectedJourney: ref<Journey | null>(null),
     setFeedback: vi.fn(),
     shouldShowBackupReminder: ref(false),
     snoozePausedGame: vi.fn(),
     trophyViews: ref([]),
+    updateLogEntry: vi.fn(),
     updateCurrentJourneyStatus: vi.fn(),
   }
 
@@ -145,6 +149,7 @@ describe('HomeView', () => {
     backlogState.logDraft.value = ''
     backlogState.logs.value = []
     backlogState.recentLogs.value = []
+    backlogState.selectedJourney.value = null
     backlogState.shouldShowBackupReminder.value = false
     backlogState.trophyViews.value = []
     vi.clearAllMocks()
@@ -181,6 +186,11 @@ describe('HomeView', () => {
           TrophyIcon: true,
           VBtn: ButtonStub,
           VTextarea: true,
+          VDialog: true,
+          VCard: true,
+          VCardTitle: true,
+          VCardText: true,
+          VCardActions: true,
         },
       },
     })
@@ -190,5 +200,61 @@ describe('HomeView', () => {
     expect(wrapper.text()).not.toContain('Old Credits')
     expect(wrapper.text()).not.toContain('Quiet Pause')
     expect(backlogState.selectGame).toHaveBeenCalledWith('playing')
+  })
+
+  it('offers share and edit controls for each recent log', () => {
+    const backlogState = useMockBacklogState()
+    const active = game({ id: 'active', title: 'Active Quest', status: 'playing' })
+    backlogState.games.value = [active]
+    backlogState.currentFocus.value = active
+    backlogState.selectedJourney.value = {
+      id: 'active:journey',
+      gameId: active.id,
+      status: 'playing',
+      platform: 'Switch',
+      ownershipType: null,
+      priority: null,
+      rating: null,
+      review: '',
+      playTimeHours: null,
+      startedAt: null,
+      finishedAt: null,
+      pausedAt: null,
+      nudgeAt: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      deletedAt: null,
+    }
+    backlogState.recentLogs.value = [{
+      id: 'log-1',
+      gameId: active.id,
+      content: 'A neat little moment.',
+      createdAt: '2026-06-01T00:00:00.000Z',
+      updatedAt: '2026-06-01T00:00:00.000Z',
+      deletedAt: null,
+    }]
+
+    const wrapper = mount(HomeView, {
+      global: {
+        stubs: {
+          GameCover: CoverStub,
+          HomeChoiceCard: true,
+          HomeEmptyState: true,
+          IconExternalLink: true,
+          RouterLink: true,
+          TrophyIcon: true,
+          VBtn: ButtonStub,
+          VTextarea: true,
+          VDialog: true,
+          VCard: true,
+          VCardTitle: true,
+          VCardText: true,
+          VCardActions: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('button[aria-label="Share log entry"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="Edit log entry"]')).toBeTruthy()
   })
 })

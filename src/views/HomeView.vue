@@ -11,12 +11,13 @@ import { useBacklog } from '../composables/useBacklog'
 import { useSettings } from '../composables/useSettings'
 import { useI18n, type MessageKey } from '../i18n'
 import { downloadBackupPayload } from '../lib/backupDownload'
+import { createPlayLogShareText } from '../lib/playLogShare'
 import {
   recommendBacklogGames,
   type BacklogRecommendation,
   type RecommendationReason,
 } from '../lib/backlogRecommendation'
-import type { Game, GameStatus } from '../types'
+import type { Game, GameStatus, LogEntry } from '../types'
 
 const {
   currentFocus,
@@ -34,13 +35,15 @@ const {
   recentLogs,
   saveCurrentLog,
   selectGame,
+  selectedJourney,
   setFeedback,
   shouldShowBackupReminder,
   snoozePausedGame,
   trophyViews,
+  updateLogEntry,
   updateCurrentJourneyStatus,
 } = useBacklog()
-const { ownershipLabel, t } = useI18n()
+const { ownershipLabel, statusLabel, t } = useI18n()
 const { settings, setRecommendationHistory } = useSettings()
 const router = useRouter()
 
@@ -51,6 +54,9 @@ const isDesktopHomeLayout = ref(false)
 const pointerDownPosition = ref<{ x: number; y: number } | null>(null)
 const backlogRecommendations = ref<BacklogRecommendation[]>([])
 const recentRecommendationIds = ref<string[]>([])
+const editingHomeLogId = ref<string | null>(null)
+const editingHomeLogContent = ref('')
+const sharingHomeLog = ref<LogEntry | null>(null)
 const ACTIVE_HOME_STATUSES: GameStatus[] = ['playing', 'ongoing']
 let desktopHomeMediaQuery: MediaQueryList | null = null
 
@@ -67,6 +73,29 @@ const activeHomeGames = computed(() =>
 )
 
 const displayedRecentLogs = computed(() => recentLogs.value.slice(0, isDesktopHomeLayout.value ? 5 : 3))
+const editingHomeLog = computed(() => displayedRecentLogs.value.find((log) => log.id === editingHomeLogId.value) ?? null)
+const canSaveHomeLogEdit = computed(
+  () => Boolean(editingHomeLog.value) &&
+    editingHomeLogContent.value.trim().length > 0 &&
+    editingHomeLogContent.value.trim() !== editingHomeLog.value?.content,
+)
+const canNativeHomeShare = computed(() => typeof navigator.share === 'function')
+const homePlayLogShareText = computed(() => {
+  const log = sharingHomeLog.value
+  const game = log ? games.value.find((candidate) => candidate.id === log.gameId) : null
+
+  if (!log || !game || !selectedJourney.value) {
+    return ''
+  }
+
+  return createPlayLogShareText({
+    game: { ...game, platform: selectedJourney.value.platform, status: selectedJourney.value.status },
+    hashtags: settings.playLogShareHashtags,
+    log,
+    status: statusLabel(selectedJourney.value.status),
+    template: settings.playLogShareTemplate,
+  })
+})
 const recentTrophies = computed(() => earnedTrophyViews.value.slice(0, 3))
 const currentGameTimeline = computed(() => {
   if (!featuredGame.value) {
@@ -290,6 +319,56 @@ function refreshBacklogRecommendations() {
     ...recentRecommendationIds.value,
     ...recommendations.map((recommendation) => recommendation.game.id),
   ].slice(-4)
+}
+
+function startEditingHomeLog(log: LogEntry) {
+  editingHomeLogId.value = log.id
+  editingHomeLogContent.value = log.content
+}
+
+function cancelHomeLogEdit() {
+  editingHomeLogId.value = null
+  editingHomeLogContent.value = ''
+}
+
+async function saveHomeLogEdit() {
+  if (!editingHomeLogId.value || !canSaveHomeLogEdit.value) {
+    return
+  }
+
+  await updateLogEntry(editingHomeLogId.value, editingHomeLogContent.value.trim())
+  cancelHomeLogEdit()
+}
+
+async function shareHomeLog() {
+  if (!homePlayLogShareText.value || typeof navigator.share !== 'function') {
+    return
+  }
+
+  try {
+    await navigator.share({ text: homePlayLogShareText.value })
+    sharingHomeLog.value = null
+    setFeedback(t('feedback.playLogShared'))
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      setFeedback(t('feedback.playLogShareFailed'), 'error')
+    }
+  }
+}
+
+async function copyHomeLogShareText() {
+  if (!homePlayLogShareText.value || !navigator.clipboard) {
+    setFeedback(t('feedback.playLogShareFailed'), 'error')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(homePlayLogShareText.value)
+    sharingHomeLog.value = null
+    setFeedback(t('feedback.playLogCopied'))
+  } catch {
+    setFeedback(t('feedback.playLogShareFailed'), 'error')
+  }
 }
 
 function formatRecommendationMeta(game: Game) {
@@ -632,8 +711,61 @@ onBeforeUnmount(() => {
 
           <div v-if="displayedRecentLogs.length > 0" class="home-log-preview">
             <article v-for="log in displayedRecentLogs" :key="log.id" class="log-entry compact">
-              <time>{{ formatDate(log.createdAt) }}</time>
-              <p>{{ log.content }}</p>
+              <div class="log-entry-header">
+                <time>{{ formatDate(log.createdAt) }}</time>
+                <div v-if="editingHomeLogId !== log.id" class="log-entry-buttons">
+                  <button
+                    class="icon-button log-edit-button"
+                    type="button"
+                    :aria-label="t('detail.shareLog')"
+                    :title="t('detail.shareLog')"
+                    @click="sharingHomeLog = log"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                      <circle cx="18" cy="5" r="3" />
+                      <circle cx="6" cy="12" r="3" />
+                      <circle cx="18" cy="19" r="3" />
+                      <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                    </svg>
+                  </button>
+                  <button
+                    class="icon-button log-edit-button"
+                    type="button"
+                    :aria-label="t('detail.editLog')"
+                    :title="t('detail.editLog')"
+                    @click="startEditingHomeLog(log)"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <form v-if="editingHomeLogId === log.id" class="log-edit-form" @submit.prevent="saveHomeLogEdit">
+                <VTextarea
+                  class="form-control"
+                  :model-value="editingHomeLogContent"
+                  rows="4"
+                  auto-grow
+                  :aria-label="t('detail.editLog')"
+                  @update:model-value="editingHomeLogContent = String($event ?? '')"
+                />
+                <div class="log-edit-actions">
+                  <VBtn
+                    class="miolog-primary-action"
+                    color="primary"
+                    type="submit"
+                    :disabled="!canSaveHomeLogEdit"
+                  >
+                    {{ t('detail.saveLogEdit') }}
+                  </VBtn>
+                  <VBtn type="button" variant="outlined" color="primary" @click="cancelHomeLogEdit">
+                    {{ t('detail.cancelLogEdit') }}
+                  </VBtn>
+                </div>
+              </form>
+              <p v-else>{{ log.content }}</p>
             </article>
             <div class="home-current-actions">
               <RouterLink
@@ -651,6 +783,40 @@ onBeforeUnmount(() => {
             <p>{{ t('home.noRecentThoughtsBody') }}</p>
           </div>
         </aside>
+
+        <VDialog :model-value="Boolean(sharingHomeLog)" class="confirm-dialog" max-width="560" @update:model-value="sharingHomeLog = null">
+          <VCard>
+            <VCardTitle>{{ t('detail.shareLogTitle') }}</VCardTitle>
+            <VCardText>
+              <div class="share-preview">
+                <div class="share-preview-heading share-preview-heading--count">
+                  <span>{{ t('detail.shareLogCharacterCount', { count: homePlayLogShareText.length }) }}</span>
+                </div>
+                <p>{{ homePlayLogShareText }}</p>
+              </div>
+              <p v-if="!canNativeHomeShare" class="share-native-unavailable">
+                {{ t('detail.shareLogUnavailable') }}
+              </p>
+            </VCardText>
+            <VCardActions>
+              <VBtn type="button" variant="text" color="primary" @click="sharingHomeLog = null">
+                {{ t('detail.shareLogCancel') }}
+              </VBtn>
+              <VBtn type="button" variant="outlined" color="primary" @click="copyHomeLogShareText">
+                {{ t('detail.shareLogCopy') }}
+              </VBtn>
+              <VBtn
+                class="miolog-primary-action"
+                type="button"
+                color="primary"
+                :disabled="!canNativeHomeShare"
+                @click="shareHomeLog"
+              >
+                {{ t('detail.shareLogNative') }}
+              </VBtn>
+            </VCardActions>
+          </VCard>
+        </VDialog>
 
         <aside v-if="featuredGame" class="panel home-side-panel home-journey-panel">
           <div class="section-heading compact">
