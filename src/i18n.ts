@@ -159,6 +159,7 @@ const en = {
       recommendationReasonPriority: 'Marked {priority}',
       recommendationReasonTaste: 'Fits your {tag} shelf',
       recommendationReasonLongWaiting: 'Waiting about {months} months',
+      recommendationReasonRediscovery: 'Mio dusted this one off',
       recommendationReasonReady: 'Ready when you are',
       backupReminderKicker: 'Local safety',
       backupReminderTitle: 'Time for a tiny safety backup',

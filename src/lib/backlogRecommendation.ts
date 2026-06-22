@@ -5,6 +5,7 @@ export type RecommendationReason =
   | { kind: 'priority'; priority: GamePriority }
   | { kind: 'taste'; tag: string }
   | { kind: 'longWaiting'; months: number }
+  | { kind: 'rediscovery' }
   | { kind: 'ready' }
 
 export interface BacklogRecommendation {
@@ -18,15 +19,16 @@ interface RecommendBacklogGamesOptions {
   now?: Date
   random?: () => number
   recentGameIds?: string[]
+  recommendationHistory?: Record<string, string>
 }
 
-const PRIORITY_SCORE: Record<GamePriority, number> = {
+const PRIORITY_SCORE: Record<Exclude<GamePriority, 'save-for-later'>, number> = {
   'high-interest': 34,
   'low-pressure': 20,
-  'save-for-later': 6,
 }
 
 const GENERIC_TASTE_TAGS = new Set(['Action', 'Adventure', 'RPG'])
+const RECENT_TASTE_JOURNEY_LIMIT = 6
 
 export function recommendBacklogGames(
   games: Game[],
@@ -37,6 +39,7 @@ export function recommendBacklogGames(
   const now = options.now ?? new Date()
   const random = options.random ?? Math.random
   const recentGameIds = options.recentGameIds ?? []
+  const recommendationHistory = options.recommendationHistory ?? {}
   const journeysByGameId = groupJourneysByGameId(journeys)
   const candidates = games.flatMap((game) => {
     const gameJourneys = journeysByGameId.get(game.id) ?? []
@@ -44,6 +47,7 @@ export function recommendBacklogGames(
 
     return game.deletedAt === null &&
       currentJourney?.status === 'backlog' &&
+      currentJourney.priority !== 'save-for-later' &&
       !hasActiveJourney(gameJourneys)
       ? [{ game, journey: currentJourney }]
       : []
@@ -58,16 +62,59 @@ export function recommendBacklogGames(
     .map(({ game, journey }) => scoreBacklogGame(game, journey, tasteProfile, now, recentGameIds))
     .sort((left, right) => right.score - left.score || left.game.title.localeCompare(right.game.title))
   const topPoolSize = Math.min(scored.length, Math.max(limit * 3, 6))
-  const pool = scored.slice(0, topPoolSize)
-  const picks: BacklogRecommendation[] = []
+  const primaryPool = scored.slice(0, topPoolSize)
+  const picks = [primaryPool.splice(weightedPickIndex(primaryPool, random), 1)[0]]
 
-  while (pool.length > 0 && picks.length < limit) {
-    const selectedIndex = weightedPickIndex(pool, random)
-    picks.push(pool[selectedIndex])
-    pool.splice(selectedIndex, 1)
+  if (limit > 1 && scored.length > 1) {
+    const rediscovery = pickRediscovery(
+      scored.filter((recommendation) => recommendation.game.id !== picks[0].game.id),
+      recommendationHistory,
+      random,
+    )
+
+    if (rediscovery) {
+      const rediscoveryReasons: RecommendationReason[] = [{ kind: 'rediscovery' }, ...rediscovery.reasons]
+      picks.push({
+        ...rediscovery,
+        reasons: rediscoveryReasons.slice(0, 2),
+      })
+    }
+  }
+
+  for (const recommendation of primaryPool) {
+    if (picks.length >= limit) {
+      break
+    }
+
+    if (!picks.some((pick) => pick.game.id === recommendation.game.id)) {
+      picks.push(recommendation)
+    }
   }
 
   return picks
+}
+
+function pickRediscovery(
+  recommendations: BacklogRecommendation[],
+  recommendationHistory: Record<string, string>,
+  random: () => number,
+) {
+  const ordered = [...recommendations].sort((left, right) => {
+    const leftShownAt = recommendationHistory[left.game.id]
+    const rightShownAt = recommendationHistory[right.game.id]
+
+    if (!leftShownAt && rightShownAt) return -1
+    if (leftShownAt && !rightShownAt) return 1
+    if (leftShownAt && rightShownAt) {
+      const difference = Date.parse(leftShownAt) - Date.parse(rightShownAt)
+      if (difference !== 0) return difference
+    }
+
+    return left.game.title.localeCompare(right.game.title)
+  })
+  const pool = ordered.slice(0, Math.min(6, ordered.length))
+
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))]
 }
 
 function scoreBacklogGame(
@@ -80,7 +127,7 @@ function scoreBacklogGame(
   let score = 20
   const scoredReasons: Array<{ reason: RecommendationReason; score: number }> = []
 
-  if (journey.priority) {
+  if (journey.priority && journey.priority !== 'save-for-later') {
     const priorityScore = PRIORITY_SCORE[journey.priority]
     score += priorityScore
     scoredReasons.push({ reason: { kind: 'priority', priority: journey.priority }, score: priorityScore })
@@ -125,11 +172,19 @@ function buildTasteProfile(games: Game[], journeys: Journey[], now: Date) {
   const profile = new Map<string, number>()
   const gameById = new Map(games.filter((game) => game.deletedAt === null).map((game) => [game.id, game]))
   const weightsByGameAndTag = new Map<string, Map<string, number>>()
+  const recentRatedFinishes = journeys
+    .filter((journey) => {
+      const game = gameById.get(journey.gameId)
 
-  for (const journey of journeys) {
+      return Boolean(game && journey.deletedAt === null && journey.status === 'finished' && journey.rating !== null)
+    })
+    .sort((left, right) => getFinishedTasteTimestamp(right) - getFinishedTasteTimestamp(left))
+    .slice(0, RECENT_TASTE_JOURNEY_LIMIT)
+
+  for (const journey of recentRatedFinishes) {
     const game = gameById.get(journey.gameId)
 
-    if (!game || journey.deletedAt !== null || journey.status !== 'finished' || journey.rating === null) {
+    if (!game || journey.rating === null) {
       continue
     }
 
@@ -159,6 +214,12 @@ function buildTasteProfile(games: Game[], journeys: Journey[], now: Date) {
   }
 
   return profile
+}
+
+function getFinishedTasteTimestamp(journey: Journey) {
+  const timestamp = new Date(journey.finishedAt ?? journey.updatedAt).getTime()
+
+  return Number.isFinite(timestamp) ? timestamp : 0
 }
 
 function bestTasteMatch(game: Game, tasteProfile: Map<string, number>) {

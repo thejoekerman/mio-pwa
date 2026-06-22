@@ -143,6 +143,7 @@ const ja = {
         recommendationReasonPriority: '{priority}として登録済み',
         recommendationReasonTaste: 'あなたの「{tag}」棚に一致',
         recommendationReasonLongWaiting: '約{months}か月待機中',
+        recommendationReasonRediscovery: 'Mioが棚から掘り出しました',
         recommendationReasonReady: 'あなたのタイミングで始められます',
         backupReminderKicker: 'ローカルデータ保護',
         backupReminderTitle: 'そろそろ小さなバックアップを',

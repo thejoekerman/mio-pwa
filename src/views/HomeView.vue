@@ -8,6 +8,7 @@ import HomeEmptyState from '../components/HomeEmptyState.vue'
 import IconExternalLink from '../components/IconExternalLink.vue'
 import TrophyIcon from '../components/TrophyIcon.vue'
 import { useBacklog } from '../composables/useBacklog'
+import { useSettings } from '../composables/useSettings'
 import { useI18n, type MessageKey } from '../i18n'
 import { downloadBackupPayload } from '../lib/backupDownload'
 import {
@@ -40,6 +41,7 @@ const {
   updateCurrentJourneyStatus,
 } = useBacklog()
 const { ownershipLabel, t } = useI18n()
+const { settings, setRecommendationHistory } = useSettings()
 const router = useRouter()
 
 const activeGameId = ref<string | null>(null)
@@ -102,7 +104,12 @@ const currentGameTimeline = computed(() => {
 })
 const backlogRecommendationCandidates = computed(() =>
   games.value
-    .filter((game) => game.deletedAt === null && game.status === 'backlog')
+    .filter(
+      (game) =>
+        game.deletedAt === null &&
+        game.status === 'backlog' &&
+        game.priority !== 'save-for-later',
+    )
     .sort((left, right) => left.title.localeCompare(right.title)),
 )
 const canUseLocalRecommendation = computed(() => backlogRecommendationCandidates.value.length > 0)
@@ -270,9 +277,15 @@ function refreshBacklogRecommendations() {
   const recommendations = recommendBacklogGames(games.value, journeys.value, {
     limit: 2,
     recentGameIds: recentRecommendationIds.value,
+    recommendationHistory: settings.recommendationHistory,
   })
 
   backlogRecommendations.value = recommendations
+  const shownAt = new Date().toISOString()
+  setRecommendationHistory({
+    ...settings.recommendationHistory,
+    ...Object.fromEntries(recommendations.map((recommendation) => [recommendation.game.id, shownAt])),
+  })
   recentRecommendationIds.value = [
     ...recentRecommendationIds.value,
     ...recommendations.map((recommendation) => recommendation.game.id),
@@ -300,6 +313,10 @@ function formatRecommendationReason(reason: RecommendationReason) {
 
   if (reason.kind === 'longWaiting') {
     return t('home.recommendationReasonLongWaiting', { months: reason.months })
+  }
+
+  if (reason.kind === 'rediscovery') {
+    return t('home.recommendationReasonRediscovery')
   }
 
   return t('home.recommendationReasonReady')

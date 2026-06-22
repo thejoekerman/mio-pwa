@@ -141,6 +141,22 @@ describe('useSettings', () => {
       expect(settings.lastSyncedAt).toBeNull()
       expect(settings.lastBackupExportedAt).toBeNull()
     })
+
+    it('keeps only valid recommendation-history timestamps', async () => {
+      const { useSettings } = await loadSettings({
+        stored: {
+          recommendationHistory: {
+            valid: '2026-05-01T00:00:00.000Z',
+            invalidDate: 'not-a-date',
+            invalidValue: 12,
+          },
+        },
+      })
+
+      expect(useSettings().settings.recommendationHistory).toEqual({
+        valid: '2026-05-01T00:00:00.000Z',
+      })
+    })
   })
 
   describe('demo mode', () => {
@@ -210,6 +226,22 @@ describe('useSettings', () => {
       setPlayLogShareSettings('   ', '')
       expect(settings.playLogShareTemplate).toContain('{log}')
       expect(settings.playLogShareHashtags).toBe('')
+    })
+
+    it('persists a bounded local recommendation history', async () => {
+      const { useSettings } = await loadSettings()
+      const { setRecommendationHistory, settings } = useSettings()
+
+      setRecommendationHistory({
+        old: '2026-01-01T00:00:00.000Z',
+        recent: '2026-05-01T00:00:00.000Z',
+        invalid: 'nope',
+      })
+
+      expect(settings.recommendationHistory).toEqual({
+        recent: '2026-05-01T00:00:00.000Z',
+        old: '2026-01-01T00:00:00.000Z',
+      })
     })
 
     it('sets the documentElement lang and theme on language/theme change', async () => {

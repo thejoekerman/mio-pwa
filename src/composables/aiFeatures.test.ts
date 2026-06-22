@@ -67,6 +67,7 @@ function makeSettings(): AppSettingsState {
     aiLocalReviewModel: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
     playLogShareTemplate: '{title}\n\n{log}\n\n{hashtags}',
     playLogShareHashtags: '#games',
+    recommendationHistory: {},
   })
 }
 

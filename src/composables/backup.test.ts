@@ -36,6 +36,7 @@ function makeSettings(language: 'en' | 'de' = 'en'): AppSettingsState {
     aiLocalReviewModel: '',
     playLogShareTemplate: '{title}\n\n{log}\n\n{hashtags}',
     playLogShareHashtags: '#games',
+    recommendationHistory: {},
   })
 }
 

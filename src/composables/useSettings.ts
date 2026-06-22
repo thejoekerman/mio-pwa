@@ -34,6 +34,7 @@ export interface AppSettingsState {
   aiLocalReviewModel: string
   playLogShareTemplate: string
   playLogShareHashtags: string
+  recommendationHistory: Record<string, string>
 }
 
 function detectBrowserLanguage(): AppLanguage {
@@ -150,6 +151,10 @@ function readStoredSettings(): Partial<AppSettingsState> {
       nextState.playLogShareHashtags = parsed.playLogShareHashtags
     }
 
+    if (parsed.recommendationHistory && typeof parsed.recommendationHistory === 'object' && !Array.isArray(parsed.recommendationHistory)) {
+      nextState.recommendationHistory = normalizeRecommendationHistory(parsed.recommendationHistory)
+    }
+
     return nextState
   } catch {
     return {}
@@ -176,6 +181,7 @@ function createSettingsStore() {
     aiLocalReviewModel: stored.aiLocalReviewModel ?? DEFAULT_LOCAL_REVIEW_MODEL,
     playLogShareTemplate: stored.playLogShareTemplate ?? DEFAULT_PLAY_LOG_SHARE_TEMPLATE,
     playLogShareHashtags: stored.playLogShareHashtags ?? DEFAULT_PLAY_LOG_SHARE_HASHTAGS,
+    recommendationHistory: stored.recommendationHistory ?? {},
   })
 
   watch(
@@ -272,11 +278,16 @@ function createSettingsStore() {
     settings.playLogShareHashtags = hashtags.trim()
   }
 
+  function setRecommendationHistory(history: Record<string, string>) {
+    settings.recommendationHistory = normalizeRecommendationHistory(history)
+  }
+
   return {
     setAiLocalReviewDraftEnabled,
     setAiLocalReviewModel,
     setAiReviewDraftAvailable,
     setPlayLogShareSettings,
+    setRecommendationHistory,
     setSyncApiVersion,
     setAutoSyncEnabled,
     setBackupReminderDismissedAt,
@@ -294,4 +305,13 @@ const settingsStore = createSettingsStore()
 
 export function useSettings() {
   return settingsStore
+}
+
+function normalizeRecommendationHistory(history: object): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(history)
+      .filter(([gameId, shownAt]) => gameId && typeof shownAt === 'string' && Number.isFinite(Date.parse(shownAt)))
+      .sort(([, left], [, right]) => Date.parse(right) - Date.parse(left))
+      .slice(0, 200),
+  )
 }

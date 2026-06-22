@@ -144,6 +144,7 @@ const de = {
       recommendationReasonPriority: 'Markiert als {priority}',
       recommendationReasonTaste: 'Passt in dein {tag}-Regal',
       recommendationReasonLongWaiting: 'Wartet seit etwa {months} Monaten',
+      recommendationReasonRediscovery: 'Mio hat dieses Spiel wiederentdeckt',
       recommendationReasonReady: 'Bereit, wenn du es bist',
       backupReminderKicker: 'Lokale Sicherheit',
       backupReminderTitle: 'Zeit für ein kleines Sicherheits-Backup',
