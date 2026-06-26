@@ -1520,6 +1520,18 @@ h3 {
   padding-left: 12px;
 }
 
+@media (min-width: 600px) {
+  .embla__slide {
+    flex: 0 0 66%;
+  }
+}
+
+@media (min-width: 900px) {
+  .embla__slide {
+    flex: 0 0 55%;
+  }
+}
+
 .home-playing-rail {
   padding-bottom: 6px;
 }
@@ -1749,6 +1761,7 @@ h3 {
 
 .home-ai-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 50vw), 1fr));
   gap: 12px;
   margin-top: 10px;
 }
@@ -1777,7 +1790,7 @@ h3 {
 }
 
 .home-choice-cover .game-cover--small {
-  width: min(128px, 48vw);
+  width: min(100px, 36vw);
   margin-inline: auto;
 }
 
