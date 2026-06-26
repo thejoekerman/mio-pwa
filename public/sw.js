@@ -5,6 +5,29 @@ const REMOTE_ARTWORK_HOSTS = new Set([
   'images.igdb.com',
   'upload.wikimedia.org',
 ])
+
+/**
+ * Fetch with timeout. If the request doesn't complete within `timeoutMs`,
+ * rejects with a TimeoutError so we can fall back to cache immediately.
+ * This prevents the app from hanging on slow connections with a black screen.
+ */
+function fetchWithTimeout(request, timeoutMs = 3000) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error('Fetch timed out'))
+    }, timeoutMs)
+
+    fetch(request)
+      .then((response) => {
+        clearTimeout(timeoutId)
+        resolve(response)
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId)
+        reject(error)
+      })
+  })
+}
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
@@ -71,7 +94,7 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      fetchWithTimeout(request, 3000)
         .then((response) => {
           const clonedResponse = response.clone()
           caches.open(RUNTIME_CACHE).then((cache) => cache.put('/index.html', clonedResponse))
@@ -104,7 +127,7 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      const networkResponse = fetch(request)
+      const networkResponse = fetchWithTimeout(request, 5000)
         .then((response) => {
           if (response.ok || response.type === 'opaque') {
             const clonedResponse = response.clone()
