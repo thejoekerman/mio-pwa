@@ -1,7 +1,7 @@
 {
   "name": "miolog-pwa",
   "private": true,
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "MioLog local-first games backlog and play-log PWA.",
   "license": "AGPL-3.0-or-later",
   "type": "module",
