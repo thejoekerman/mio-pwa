@@ -45,7 +45,3 @@ Extended context in `memory/`:
 - `07-review.md` — Review drafting and recommendations
 - `08-verification.md` — Dev commands and verification
 - `09-release.md` — Durable release notes
-
-## Sister Repos
-- `mio-server/` — Optional self-hosted backend
-- `games-backlog/` — Marketing site (this repo has no app source)
