@@ -22,7 +22,7 @@
     "@mlc-ai/web-llm": "^0.2.84",
     "canvas-confetti": "^1.9.4",
     "chart.js": "^4.5.1",
-    "dexie": "^4.4.2",
+    "dexie": "^4.4.4",
     "embla-carousel": "^8.6.0",
     "papaparse": "^5.5.4",
     "vite-plugin-vuetify": "^2.1.3",
