@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@khmyznikov/pwa-install": "^0.6.4",
-    "@mlc-ai/web-llm": "^0.2.83",
+    "@mlc-ai/web-llm": "^0.2.84",
     "canvas-confetti": "^1.9.4",
     "chart.js": "^4.5.1",
     "dexie": "^4.4.2",
