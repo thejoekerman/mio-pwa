@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'miolog-v3.2.1'
+const CACHE_VERSION = 'miolog-v3.3.0'
 const SHELL_CACHE = `${CACHE_VERSION}-shell`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 const REMOTE_ARTWORK_HOSTS = new Set([
