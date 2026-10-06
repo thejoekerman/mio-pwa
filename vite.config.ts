@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
+import { offlineAssetsPlugin } from './build/offlineAssets'
 
 function demoHeadPlugin() {
   return {
@@ -42,6 +43,7 @@ export default defineConfig({
   base: process.env.VITE_APP_TARGET === 'desktop' ? './' : '/',
   plugins: [
     demoHeadPlugin(),
+    offlineAssetsPlugin(),
     // `pwa-install` is the @khmyznikov/pwa-install web component, not a Vue
     // component — tell the compiler so it doesn't try to resolve it or warn.
     vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === 'pwa-install' } } }),
