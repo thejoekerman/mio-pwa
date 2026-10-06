@@ -58,6 +58,7 @@ function makeSettings(): AppSettingsState {
     lastSyncedAt: null,
     lastSyncError: null,
     libraryViewMode: 'list' as LibraryViewMode,
+    coverShape: 'portrait',
     backupReminderEnabled: false,
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,

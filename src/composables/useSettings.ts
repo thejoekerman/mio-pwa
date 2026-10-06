@@ -3,6 +3,8 @@ import {
   APP_LANGUAGES,
   APP_THEMES,
   LIBRARY_VIEW_MODES,
+  COVER_SHAPES,
+  type CoverShape,
   type AppLanguage,
   type AppTheme,
   type LibraryViewMode,
@@ -25,6 +27,7 @@ export interface AppSettingsState {
   lastSyncedAt: string | null
   lastSyncError: string | null
   libraryViewMode: LibraryViewMode
+  coverShape: CoverShape
   backupReminderEnabled: boolean
   lastBackupExportedAt: string | null
   backupReminderDismissedAt: string | null
@@ -110,6 +113,10 @@ function readStoredSettings(): Partial<AppSettingsState> {
       nextState.libraryViewMode = parsed.libraryViewMode
     }
 
+    if (parsed.coverShape && COVER_SHAPES.includes(parsed.coverShape)) {
+      nextState.coverShape = parsed.coverShape
+    }
+
     if (typeof parsed.backupReminderEnabled === 'boolean') {
       nextState.backupReminderEnabled = parsed.backupReminderEnabled
     }
@@ -172,6 +179,7 @@ function createSettingsStore() {
     lastSyncedAt: stored.lastSyncedAt ?? null,
     lastSyncError: stored.lastSyncError ?? null,
     libraryViewMode: stored.libraryViewMode ?? 'list',
+    coverShape: stored.coverShape ?? 'portrait',
     backupReminderEnabled: isDemoMode ? false : stored.backupReminderEnabled ?? true,
     lastBackupExportedAt: stored.lastBackupExportedAt ?? null,
     backupReminderDismissedAt: stored.backupReminderDismissedAt ?? null,

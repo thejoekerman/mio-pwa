@@ -420,6 +420,12 @@ const ja = {
         themeTitle: 'MioLogの雰囲気を選択',
         themeHelper: 'ダークで落ち着いたジャーナル風、鮮やかなMioちゃんパープル、クリーンなPolar、Preem Neonから選べます。',
         themeLabel: 'アプリテーマ',
+        coverShapeLabel: 'カバーの形',
+        coverShapeHelper: 'アプリ全体のカバーの形を選べます。画像は切り取らずに表示されます。',
+        coverShape: {
+            portrait: '縦長（3:4）',
+            square: '正方形（1:1）',
+        },
         theme: {
             journal: 'Midnight Journal',
             mio: 'Mio',

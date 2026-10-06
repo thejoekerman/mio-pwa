@@ -86,6 +86,7 @@ function makeSettings(overrides: Partial<AppSettingsState> = {}): AppSettingsSta
     lastSyncedAt: null,
     lastSyncError: null,
     libraryViewMode: 'grid' as LibraryViewMode,
+    coverShape: 'portrait',
     backupReminderEnabled: false,
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,

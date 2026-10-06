@@ -2433,14 +2433,12 @@ h3 {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.metadata-cover-suggestion img {
+.metadata-cover-suggestion > .game-cover {
   width: 76px;
-  aspect-ratio: 3 / 4;
   border-radius: 9px;
-  object-fit: cover;
 }
 
-.metadata-cover-suggestion div {
+.metadata-cover-suggestion > div:not(.game-cover) {
   display: grid;
   justify-items: start;
   gap: 6px;
@@ -2964,12 +2962,12 @@ textarea:focus {
 
 .game-cover--small {
   width: 112px;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: var(--cover-ratio, 0.75);
 }
 
 .game-cover--large {
   width: clamp(116px, 24vw, 158px);
-  aspect-ratio: 3 / 4;
+  aspect-ratio: var(--cover-ratio, 0.75);
 }
 
 .game-cover img,
@@ -2982,7 +2980,7 @@ textarea:focus {
 
 .game-cover img {
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   position: relative;
   z-index: 1;
   opacity: 0;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
+import GameCover from './GameCover.vue'
 import {
   GAME_OWNERSHIP_TYPES,
   GAME_PRIORITIES,
@@ -463,9 +464,9 @@ function useWikipediaCover() {
       </div>
 
       <div v-else-if="wikipediaCoverSuggestion" class="metadata-cover-suggestion">
-        <img
-          :src="wikipediaCoverSuggestion.imageUrl"
-          :alt="t('form.wikipediaCoverAlt', { title: form.title })"
+        <GameCover
+          :cover-url="wikipediaCoverSuggestion.imageUrl"
+          :title="t('form.wikipediaCoverAlt', { title: form.title })"
         />
         <div>
           <strong>{{ t('form.wikipediaCoverSuggestion') }}</strong>

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'miolog-v3.2.1'
+const CACHE_VERSION = 'miolog-v3.3.0'
 const SHELL_CACHE = `${CACHE_VERSION}-shell`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 const REMOTE_ARTWORK_HOSTS = new Set([
@@ -28,6 +28,8 @@ function fetchWithTimeout(request, timeoutMs = 3000) {
       })
   })
 }
+// The production build injects hashed JS/CSS assets, including lazy routes.
+const BUILD_ASSET_URLS = /* INJECT_BUILD_ASSETS */ []
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
@@ -39,6 +41,7 @@ const APP_SHELL_URLS = [
   '/pwa-icons/icon-192x192.png',
   '/pwa-icons/icon-512x512.png',
   '/pwa-icons/icon-512x512-maskable.png',
+  ...BUILD_ASSET_URLS,
 ]
 
 self.addEventListener('install', (event) => {
@@ -95,9 +98,11 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetchWithTimeout(request, 3000)
-        .then((response) => {
+        .then(async (response) => {
           const clonedResponse = response.clone()
-          caches.open(RUNTIME_CACHE).then((cache) => cache.put('/index.html', clonedResponse))
+          await caches.open(RUNTIME_CACHE)
+            .then((cache) => cache.put('/index.html', clonedResponse))
+            .catch(() => {}) // Storage failure must not discard a valid network response.
           return response
         })
         .catch(async () => {
@@ -125,20 +130,24 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      const networkResponse = fetchWithTimeout(request, 5000)
-        .then((response) => {
-          if (response.ok || response.type === 'opaque') {
-            const clonedResponse = response.clone()
-            caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, clonedResponse))
-          }
+  const cachedResponse = caches.match(request)
+  const networkResponse = cachedResponse.then((cached) =>
+    fetchWithTimeout(request, 5000)
+      .then(async (response) => {
+        if (response.ok || response.type === 'opaque') {
+          const clonedResponse = response.clone()
+          await caches.open(RUNTIME_CACHE)
+            .then((cache) => cache.put(request, clonedResponse))
+            .catch(() => {}) // Browsing still works if storage is full or unavailable.
+        }
 
-          return response
-        })
-        .catch(() => cachedResponse)
-
-      return cachedResponse || networkResponse
-    }),
+        return response
+      })
+      .catch(() => cached),
   )
+
+  // A cached response can finish immediately. Keep the background refresh and
+  // cache write alive even after that response has been delivered.
+  event.waitUntil(networkResponse.then(() => undefined))
+  event.respondWith(cachedResponse.then((cached) => cached || networkResponse))
 })

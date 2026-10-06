@@ -54,6 +54,7 @@ describe('useSettings', () => {
       expect(settings.autoSyncEnabled).toBe(false)
       expect(settings.syncApiVersion).toBe(1)
       expect(settings.libraryViewMode).toBe('list')
+      expect(settings.coverShape).toBe('portrait')
       expect(settings.backupReminderEnabled).toBe(true)
       expect(settings.aiLocalReviewModel).toBe(DEFAULT_LOCAL_REVIEW_MODEL)
       expect(settings.playLogShareTemplate).toContain('{log}')
@@ -81,6 +82,7 @@ describe('useSettings', () => {
           syncToken: 'abc',
           autoSyncEnabled: true,
           libraryViewMode: 'shelf',
+          coverShape: 'square',
           backupReminderEnabled: false,
           lastSyncedAt: '2026-05-01T00:00:00.000Z',
           syncApiVersion: 2,
@@ -96,6 +98,7 @@ describe('useSettings', () => {
       expect(settings.syncToken).toBe('abc')
       expect(settings.autoSyncEnabled).toBe(true)
       expect(settings.libraryViewMode).toBe('shelf')
+      expect(settings.coverShape).toBe('square')
       expect(settings.backupReminderEnabled).toBe(false)
       expect(settings.lastSyncedAt).toBe('2026-05-01T00:00:00.000Z')
       expect(settings.syncApiVersion).toBe(2)
@@ -105,7 +108,7 @@ describe('useSettings', () => {
 
     it('rejects invalid enum values and falls back to defaults', async () => {
       const { useSettings } = await loadSettings({
-        stored: { language: 'xx', theme: 'not-a-theme', libraryViewMode: 'mosaic' },
+        stored: { language: 'xx', theme: 'not-a-theme', libraryViewMode: 'mosaic', coverShape: 'circle' },
       })
       const { settings } = useSettings()
 
@@ -113,6 +116,7 @@ describe('useSettings', () => {
       expect(settings.language).toBe('en')
       expect(settings.theme).toBe('journal')
       expect(settings.libraryViewMode).toBe('list')
+      expect(settings.coverShape).toBe('portrait')
     })
 
     it('rejects unknown aiLocalReviewModel ids', async () => {
@@ -184,6 +188,13 @@ describe('useSettings', () => {
   })
 
   describe('setters and persistence', () => {
+    it('persists the cover shape when changed', async () => {
+      const { useSettings } = await loadSettings()
+      useSettings().settings.coverShape = 'square'
+      await nextTick()
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!).coverShape).toBe('square')
+    })
+
     it('resets the known sync API version when the sync endpoint changes', async () => {
       const { useSettings } = await loadSettings({
         stored: {
