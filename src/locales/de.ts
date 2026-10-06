@@ -425,6 +425,12 @@ const de = {
       themeHelper:
         'Wähle zwischen dem dunklen Journal-Look, lebhaftem Mio-chan-Lila, eisig-klarem Polar oder Preem Neon.',
       themeLabel: 'App-Design',
+      coverShapeLabel: 'Coverformat',
+      coverShapeHelper: 'Wähle das Coverformat für die gesamte App. Das Bild bleibt vollständig sichtbar.',
+      coverShape: {
+        portrait: 'Hochformat (3:4)',
+        square: 'Quadratisch (1:1)',
+      },
       theme: {
         journal: 'Mitternachts-Journal',
         mio: 'Mio',

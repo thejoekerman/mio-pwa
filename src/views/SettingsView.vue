@@ -4,7 +4,7 @@ import packageJson from '../../package.json'
 import { useBacklog } from '../composables/useBacklog'
 import { useSettings } from '../composables/useSettings'
 import { useI18n } from '../i18n'
-import { APP_LANGUAGES, APP_THEMES, type BackupData, type BackupImportMode } from '../types'
+import { APP_LANGUAGES, APP_THEMES, COVER_SHAPES, type BackupData, type BackupImportMode } from '../types'
 import { isDemoMode } from '../lib/appMode'
 import { downloadBackupPayload, downloadTextFile } from '../lib/backupDownload'
 import {
@@ -80,6 +80,12 @@ const themeOptions = computed(() =>
   APP_THEMES.map((theme) => ({
     title: t(`settings.theme.${theme}`),
     value: theme,
+  })),
+)
+const coverShapeOptions = computed(() =>
+  COVER_SHAPES.map((shape) => ({
+    title: t(`settings.coverShape.${shape}`),
+    value: shape,
   })),
 )
 const importModeOptions = computed(() => [
@@ -578,6 +584,14 @@ async function handleSyncNow() {
           :items="themeOptions"
           :model-value="settings.theme"
           @update:model-value="updateTheme"
+        />
+        <VSelect
+          v-model="settings.coverShape"
+          class="settings-control"
+          :label="t('settings.coverShapeLabel')"
+          :items="coverShapeOptions"
+          :hint="t('settings.coverShapeHelper')"
+          persistent-hint
         />
       </div>
     </section>

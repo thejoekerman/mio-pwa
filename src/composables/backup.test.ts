@@ -27,6 +27,7 @@ function makeSettings(language: 'en' | 'de' = 'en'): AppSettingsState {
     lastSyncedAt: null,
     lastSyncError: null,
     libraryViewMode: 'list',
+    coverShape: 'portrait',
     backupReminderEnabled: false,
     lastBackupExportedAt: null,
     backupReminderDismissedAt: null,

@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useSettings } from '../composables/useSettings'
+
+const { settings } = useSettings()
+const frameRatio = computed(() => settings.coverShape === 'square' ? 1 : 3 / 4)
+const sourceRatio = ref<number | null>(null)
 
 const props = withDefaults(
   defineProps<{
@@ -22,13 +27,16 @@ const palettes = [
   ['#5c4b91', '#d9b7ff'],
 ]
 const failedCoverUrl = ref<string | null>(null)
-const coverFit = ref<'fill' | 'contain' | null>(null)
+const coverFit = computed(() => sourceRatio.value === null
+  ? null
+  : Math.abs(sourceRatio.value - frameRatio.value) <= 0.08 ? 'fill' : 'contain')
 const coverLoaded = ref(false)
 const visibleCoverUrl = computed(() =>
   props.coverUrl && props.coverUrl !== failedCoverUrl.value ? props.coverUrl : null,
 )
 const coverStyle = computed(() => ({
   ...fallbackStyle.value,
+  '--cover-ratio': frameRatio.value,
   '--cover-image': visibleCoverUrl.value ? `url("${visibleCoverUrl.value}")` : 'none',
 }))
 
@@ -36,7 +44,7 @@ watch(
   () => props.coverUrl,
   () => {
     failedCoverUrl.value = null
-    coverFit.value = null
+    sourceRatio.value = null
     coverLoaded.value = false
   },
 )
@@ -76,10 +84,7 @@ function handleCoverLoad(event: Event) {
     return
   }
 
-  const ratio = image.naturalWidth / image.naturalHeight
-  const frameRatio = 3 / 4
-
-  coverFit.value = Math.abs(ratio - frameRatio) <= 0.08 ? 'fill' : 'contain'
+  sourceRatio.value = image.naturalWidth / image.naturalHeight
   coverLoaded.value = true
 }
 </script>

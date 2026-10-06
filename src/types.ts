@@ -23,6 +23,10 @@ export const LIBRARY_VIEW_MODES = ['list', 'shelf'] as const
 
 export type LibraryViewMode = (typeof LIBRARY_VIEW_MODES)[number]
 
+export const COVER_SHAPES = ['portrait', 'square'] as const
+
+export type CoverShape = (typeof COVER_SHAPES)[number]
+
 export const GAME_OWNERSHIP_TYPES = ['digital', 'physical', 'both'] as const
 
 export type GameOwnershipType = (typeof GAME_OWNERSHIP_TYPES)[number]

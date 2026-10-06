@@ -440,6 +440,12 @@ const en = {
       themeHelper:
         'Choose between dark moody journal, vibrant Mio-chan purple, icy-clean Polar, or Preem Neon.',
       themeLabel: 'App theme',
+      coverShapeLabel: 'Cover shape',
+      coverShapeHelper: 'Choose the shape of covers throughout the app. Artwork stays fully visible.',
+      coverShape: {
+        portrait: 'Portrait (3:4)',
+        square: 'Square (1:1)',
+      },
       theme: {
         journal: 'Midnight Journal',
         mio: 'Mio',
